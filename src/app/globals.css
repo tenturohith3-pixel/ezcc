@@ -105,10 +105,11 @@
 
 html {
   scroll-behavior: auto;
+  background: #0a0e1a;
 }
 
 body {
-  background: #0a0e1a;
+  background: transparent;
   color: #e0e8f0;
   position: relative;
   font-family: var(--font-sans), 'Inter', system-ui, -apple-system, sans-serif;

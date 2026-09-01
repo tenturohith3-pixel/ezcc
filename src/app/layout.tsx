@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import LoadingScreen from "@/components/LoadingScreen";
 import CookieConsent from "@/components/CookieConsent";
+import ThreeBackground from "@/components/ThreeBackground";
 import "./globals.css";
 
 const inter = Inter({
@@ -50,10 +51,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${inter.variable}`}>
       <head>
-        {/* Material Symbols for feature icons */}
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
       </head>
       <body className="min-h-screen antialiased overflow-x-hidden">
+        <ThreeBackground />
         <LoadingScreen />
         {children}
         <CookieConsent />
