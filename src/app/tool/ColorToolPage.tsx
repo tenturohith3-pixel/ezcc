@@ -18,14 +18,16 @@ import {
   SlidersHorizontal,
   Eye,
   EyeOff,
-  PanelLeftClose,
-  PanelRightClose,
   X,
   Key,
   AlertTriangle,
   Wand2,
   Lock,
   Crown,
+  RefreshCw,
+  Play,
+  Pause,
+  Scissors,
 } from "lucide-react";
 import { applyColorGrading, autoColorCorrect, type GradeSettings } from "@/lib/colorGrading";
 import { getCurrentTier, hasTierAccess, TIER_LABELS, getExpirationLevel, getTimeRemaining, type KeyTier, type ExpirationLevel } from "@/lib/keys";
@@ -54,6 +56,14 @@ const DEFAULT_SETTINGS: GradeSettings = {
   filmGrain: 0,
   halation: 0,
   bloom: 0,
+  hslRedHue: 0, hslRedSat: 100, hslRedLum: 100,
+  hslOrangeHue: 0, hslOrangeSat: 100, hslOrangeLum: 100,
+  hslYellowHue: 0, hslYellowSat: 100, hslYellowLum: 100,
+  hslGreenHue: 0, hslGreenSat: 100, hslGreenLum: 100,
+  hslAquaHue: 0, hslAquaSat: 100, hslAquaLum: 100,
+  hslBlueHue: 0, hslBlueSat: 100, hslBlueLum: 100,
+  hslPurpleHue: 0, hslPurpleSat: 100, hslPurpleLum: 100,
+  hslMagentaHue: 0, hslMagentaSat: 100, hslMagentaLum: 100,
 };
 
 const LUT_PRESETS = [
@@ -67,6 +77,17 @@ const LUT_PRESETS = [
   { id: "pastel", name: "Muted Pastel", colors: ["#c8a0b8", "#a0c8d0", "#b8c8a0"] },
 ];
 
+const HSL_CHANNELS = [
+  { name: "Red", key: "Red" as const, color: "#ef4444" },
+  { name: "Orange", key: "Orange" as const, color: "#f97316" },
+  { name: "Yellow", key: "Yellow" as const, color: "#eab308" },
+  { name: "Green", key: "Green" as const, color: "#22c55e" },
+  { name: "Aqua", key: "Aqua" as const, color: "#06b6d4" },
+  { name: "Blue", key: "Blue" as const, color: "#3b82f6" },
+  { name: "Purple", key: "Purple" as const, color: "#a855f7" },
+  { name: "Magenta", key: "Magenta" as const, color: "#ec4899" },
+];
+
 type ToolTab = "basic" | "3way" | "hsl" | "effects";
 
 const TAB_TIER: Record<ToolTab, KeyTier | null> = {
@@ -76,7 +97,6 @@ const TAB_TIER: Record<ToolTab, KeyTier | null> = {
   effects: "studio",
 };
 
-/** Sliders in basic tab that require pro key */
 const BASIC_LOCKED_SLIDERS = ["exposure", "contrast", "saturation", "brightness", "temperature"] as const;
 
 // ── Main Component ───────────────────────────────────
@@ -86,6 +106,7 @@ export default function ColorToolPage() {
   const [activeTab, setActiveTab] = useState<ToolTab>("basic");
   const [showPreview, setShowPreview] = useState(true);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedVideo, setUploadedVideo] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -95,10 +116,14 @@ export default function ColorToolPage() {
   const [expiryLevel, setExpiryLevel] = useState<ExpirationLevel>(() => getExpirationLevel());
   const [timeLeft, setTimeLeft] = useState<string | null>(() => getTimeRemaining());
   const [currentTier, setCurrentTier] = useState<KeyTier | null>(() => getCurrentTier());
+  const [scrolled, setScrolled] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoFrameRef = useRef<number>(0);
 
   const isPro = currentTier !== null;
 
@@ -117,12 +142,59 @@ export default function ColorToolPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // Track scroll for floating "Open Editor" button
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 50);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   useEffect(() => {
     if (isMobile) { setSidebarOpen(false); setRightPanelOpen(false); }
     else { setSidebarOpen(true); }
   }, [isMobile]);
 
+  // Video frame processing loop
+  useEffect(() => {
+    if (!uploadedVideo || !showPreview) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let running = true;
+    const processFrame = () => {
+      if (!running || video.paused || video.ended) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      const start = performance.now();
+      applyColorGrading(ctx, canvas.width, canvas.height, settings);
+      setProcessingTime(Math.round(performance.now() - start));
+      videoFrameRef.current = requestAnimationFrame(processFrame);
+    };
+
+    const handlePlay = () => { setIsPlaying(true); processFrame(); };
+    const handlePause = () => { setIsPlaying(false); };
+
+    video.addEventListener("play", handlePlay);
+    video.addEventListener("pause", handlePause);
+
+    // If video is already playing, start processing
+    if (!video.paused) processFrame();
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(videoFrameRef.current);
+      video.removeEventListener("play", handlePlay);
+      video.removeEventListener("pause", handlePause);
+    };
+  }, [uploadedVideo, settings, showPreview]);
+
   const renderCanvas = useCallback(() => {
+    if (uploadedVideo) return; // video has its own render loop
     const canvas = canvasRef.current;
     const img = imageRef.current;
     if (!canvas || !img || !showPreview) return;
@@ -136,9 +208,9 @@ export default function ColorToolPage() {
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     applyColorGrading(ctx, canvas.width, canvas.height, settings);
     setProcessingTime(Math.round(performance.now() - start));
-  }, [settings, showPreview]);
+  }, [settings, showPreview, uploadedVideo]);
 
-  useEffect(() => { if (uploadedImage) renderCanvas(); }, [settings, uploadedImage, renderCanvas, showPreview]);
+  useEffect(() => { if (uploadedImage && !uploadedVideo) renderCanvas(); }, [settings, uploadedImage, renderCanvas, showPreview, uploadedVideo]);
 
   const update = useCallback(
     <K extends keyof GradeSettings>(key: K, value: GradeSettings[K]) =>
@@ -148,21 +220,63 @@ export default function ColorToolPage() {
 
   const reset = () => {
     setSettings(DEFAULT_SETTINGS);
-    if (canvasRef.current && imageRef.current) renderCanvas();
+    if (canvasRef.current && imageRef.current && !uploadedVideo) renderCanvas();
+  };
+
+  const clearMedia = () => {
+    setUploadedImage(null);
+    setUploadedVideo(null);
+    setSettings(DEFAULT_SETTINGS);
+    setIsPlaying(false);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.src = "";
+    }
   };
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const src = ev.target?.result as string;
-      setUploadedImage(src);
-      const img = new Image();
-      img.onload = () => { imageRef.current = img; renderCanvas(); };
-      img.src = src;
-    };
-    reader.readAsDataURL(file);
+    const isVideo = file.type.startsWith("video/");
+
+    if (isVideo) {
+      const url = URL.createObjectURL(file);
+      setUploadedVideo(url);
+      setUploadedImage(null);
+      const video = document.createElement("video");
+      video.src = url;
+      video.crossOrigin = "anonymous";
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.onloadeddata = () => {
+        videoRef.current = video;
+        // Create initial canvas frame
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(video, 0, 0);
+            applyColorGrading(ctx, canvas.width, canvas.height, settings);
+          }
+        }
+      };
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const src = ev.target?.result as string;
+        setUploadedImage(src);
+        setUploadedVideo(null);
+        const img = new Image();
+        img.onload = () => { imageRef.current = img; renderCanvas(); };
+        img.src = src;
+      };
+      reader.readAsDataURL(file);
+    }
+    // Reset file input so same file can be re-uploaded
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleDownload = () => {
@@ -180,15 +294,33 @@ export default function ColorToolPage() {
 
   const handleAutoCC = () => {
     const canvas = canvasRef.current;
-    const img = imageRef.current;
-    if (!canvas || !img) return;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    if (uploadedVideo && videoRef.current) {
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      ctx.drawImage(videoRef.current, 0, 0);
+    } else if (imageRef.current) {
+      canvas.width = imageRef.current.naturalWidth || imageRef.current.width;
+      canvas.height = imageRef.current.naturalHeight || imageRef.current.height;
+      ctx.drawImage(imageRef.current, 0, 0);
+    } else {
+      return;
+    }
+
     const autoSettings = autoColorCorrect(ctx, canvas.width, canvas.height);
     setSettings(autoSettings);
+  };
+
+  const toggleVideoPlay = () => {
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play();
+    } else {
+      videoRef.current.pause();
+    }
   };
 
   const handleKeyValidated = (tier: KeyTier) => setCurrentTier(tier);
@@ -198,6 +330,8 @@ export default function ColorToolPage() {
     return req !== null && !hasTierAccess(req);
   };
   const isSliderLocked = (key: string) => !isPro && BASIC_LOCKED_SLIDERS.includes(key as typeof BASIC_LOCKED_SLIDERS[number]);
+
+  const hasMedia = !!uploadedImage || !!uploadedVideo;
 
   const tabs: { id: ToolTab; label: string; icon: React.ElementType; locked: boolean }[] = [
     { id: "basic", label: "Basic", icon: SlidersHorizontal, locked: false },
@@ -241,7 +375,7 @@ export default function ColorToolPage() {
       {activeTab === "hsl" && (
         isTabLocked("hsl")
           ? <LockedPanel feature="HSL Target Isolation" tier="pro" onUnlock={() => setKeyEntryOpen(true)} />
-          : <HSLTab />
+          : <HSLTab settings={settings} update={update} />
       )}
 
       {activeTab === "effects" && (
@@ -250,7 +384,6 @@ export default function ColorToolPage() {
           : <EffectsTab settings={settings} update={update} />
       )}
 
-      {/* Persistent premium nudge at bottom of sidebar */}
       {!isPro && (
         <div
           className="mt-6 p-4 rounded-xl text-center"
@@ -343,7 +476,7 @@ export default function ColorToolPage() {
           )}
           {isMobile && (
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all" style={{ background: "var(--bg-elevated)", boxShadow: "var(--neo-soft)" }}>
-              {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <SlidersHorizontal className="w-4 h-4" />}
+              <SlidersHorizontal className="w-4 h-4" />
             </button>
           )}
           <button onClick={reset} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all" style={{ background: "var(--bg-elevated)", boxShadow: "var(--neo-soft)" }} title="Reset">
@@ -351,12 +484,12 @@ export default function ColorToolPage() {
           </button>
           <button
             onClick={handleAutoCC}
-            disabled={!uploadedImage}
+            disabled={!hasMedia}
             className="flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-xl text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
-              background: uploadedImage ? "rgba(6,148,148,0.1)" : "var(--bg-elevated)",
-              border: uploadedImage ? "1px solid rgba(6,148,148,0.2)" : "1px solid var(--border-subtle)",
-              color: uploadedImage ? "var(--accent-teal)" : "var(--text-muted)",
+              background: hasMedia ? "rgba(6,148,148,0.1)" : "var(--bg-elevated)",
+              border: hasMedia ? "1px solid rgba(6,148,148,0.2)" : "1px solid var(--border-subtle)",
+              color: hasMedia ? "var(--accent-teal)" : "var(--text-muted)",
               boxShadow: "var(--neo-soft)",
             }}
           >
@@ -382,15 +515,15 @@ export default function ColorToolPage() {
           </button>
           {isMobile && (
             <button onClick={() => setRightPanelOpen(!rightPanelOpen)} className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all" style={{ background: "var(--bg-elevated)", boxShadow: "var(--neo-soft)" }}>
-              {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <Eye className="w-4 h-4" />
             </button>
           )}
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+          <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleUpload} />
         </div>
       </header>
 
       <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)]">
-        {/* Left sidebar */}
+        {/* Left sidebar — desktop: always visible, mobile: overlay */}
         {isMobile ? (
           sidebarOpen && (
             <div className="fixed inset-0 z-40 md:hidden">
@@ -408,38 +541,70 @@ export default function ColorToolPage() {
           sidebarOpen && <aside className="w-72 overflow-y-auto flex-shrink-0" style={{ background: "var(--bg-primary)", borderRight: "1px solid var(--border-subtle)" }}>{sidebarContent}</aside>
         )}
 
-        {/* Main canvas */}
+        {/* Main canvas area */}
         <main className="flex-1 flex flex-col min-w-0">
+          {/* Preview toolbar */}
           <div className="h-9 md:h-10 flex items-center justify-between px-3 md:px-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
             <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
               <span className="hidden sm:inline">Preview</span>
               <button onClick={() => setShowPreview(!showPreview)} className="p-1 rounded-lg transition-colors" style={{ background: showPreview ? "rgba(6,148,148,0.1)" : "transparent" }}>
                 {showPreview ? <Eye className="w-3.5 h-3.5 text-[var(--accent-teal)]" /> : <EyeOff className="w-3.5 h-3.5" />}
               </button>
-              {uploadedImage && <span className="text-[var(--text-ghost)] hidden md:inline">{processingTime > 0 && `Processed in ${processingTime}ms`}</span>}
+              {hasMedia && <span className="text-[var(--text-ghost)] hidden md:inline">{processingTime > 0 && `Processed in ${processingTime}ms`}</span>}
             </div>
             <div className="flex items-center gap-3 text-xs text-[var(--text-ghost)]">
+              {uploadedVideo && (
+                <button onClick={toggleVideoPlay} className="p-1 rounded-lg text-[var(--accent-teal)]" style={{ background: "rgba(6,148,148,0.1)" }}>
+                  {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                </button>
+              )}
               <span className="hidden md:inline">Client-Side Engine</span>
               <span className="hidden md:inline">•</span>
               <span>Canvas 2D</span>
             </div>
           </div>
 
+          {/* Canvas viewport */}
           <div className="flex-1 flex items-center justify-center p-4 md:p-8 relative overflow-hidden" style={{ background: "#0F0F0F" }}>
             <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
             <div className="relative w-full max-w-3xl aspect-video rounded-2xl overflow-hidden" style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--border-subtle)" }}>
-              {uploadedImage ? (
-                <canvas ref={canvasRef} className="w-full h-full object-contain" />
+              {hasMedia ? (
+                <>
+                  <canvas ref={canvasRef} className="w-full h-full object-contain" />
+                  {uploadedVideo && <video ref={videoRef} className="hidden" src={uploadedVideo} muted loop playsInline />}
+                  {/* Reupload button — top-right corner */}
+                  <button
+                    onClick={clearMedia}
+                    className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200 opacity-70 hover:opacity-100"
+                    style={{
+                      background: "rgba(0,0,0,0.6)",
+                      backdropFilter: "blur(8px)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    New File
+                  </button>
+                </>
               ) : (
-                <div className="w-full h-full flex items-center justify-center" style={{ background: "radial-gradient(ellipse at 30% 40%, rgba(6,148,148,0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 60%, rgba(10,181,181,0.05) 0%, transparent 50%), linear-gradient(135deg, #1a1a1a 0%, #181818 50%, #1a1a1a 100%)" }}>
+                /* Upload zone — centered in viewport */
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-full flex items-center justify-center cursor-pointer transition-all duration-300 hover:bg-[rgba(6,148,148,0.05)]"
+                  style={{
+                    background: "radial-gradient(ellipse at 30% 40%, rgba(6,148,148,0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 60%, rgba(10,181,181,0.05) 0%, transparent 50%), linear-gradient(135deg, #1a1a1a 0%, #181818 50%, #1a1a1a 100%)",
+                  }}
+                >
                   <div className="text-center px-4">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: "var(--bg-elevated)", boxShadow: "var(--neo-inset)" }}>
-                      <Upload className="w-7 h-7 text-[var(--text-ghost)]" />
+                    <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-transform duration-300 hover:scale-110" style={{ background: "var(--bg-elevated)", boxShadow: "var(--neo-inset)" }}>
+                      <Upload className="w-8 h-8 text-[var(--accent-teal)] opacity-60" />
                     </div>
-                    <p className="text-sm text-[var(--text-muted)] mb-1">Drop an image here or click Upload</p>
-                    <p className="text-xs text-[var(--text-ghost)]">Real-time Canvas color grading</p>
+                    <p className="text-sm text-[var(--text-muted)] mb-1">Drop an image or video here</p>
+                    <p className="text-xs text-[var(--text-ghost)]">Click to browse • PNG, JPG, MP4, MOV</p>
+                    <p className="text-[10px] text-[var(--text-ghost)] mt-3 opacity-60">Real-time Canvas color grading</p>
                   </div>
-                </div>
+                </button>
               )}
             </div>
           </div>
@@ -459,7 +624,7 @@ export default function ColorToolPage() {
           </div>
         </main>
 
-        {/* Right sidebar */}
+        {/* Right panel — desktop: always visible, mobile: overlay */}
         {isMobile ? (
           rightPanelOpen && (
             <div className="fixed inset-0 z-40 md:hidden">
@@ -479,11 +644,27 @@ export default function ColorToolPage() {
           </aside>
         )}
       </div>
+
+      {/* Mobile floating "Open Editor" button — shows on scroll */}
+      {isMobile && scrolled && !sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3 rounded-full text-sm font-semibold transition-all duration-300 md:hidden"
+          style={{
+            background: "linear-gradient(135deg, #069494, #047A7A)",
+            color: "#EDE8D0",
+            boxShadow: "0 4px 20px rgba(6,148,148,0.4), 0 0 0 1px rgba(6,148,148,0.3)",
+          }}
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          Open Editor
+        </button>
+      )}
     </div>
   );
 }
 
-// ── Tab Panels ────────────────────────────────────────
+// ── Basic Tab ────────────────────────────────────
 
 function BasicTab({ settings, update, isPro, onUnlock }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void; isPro: boolean; onUnlock: () => void }) {
   const sliders = [
@@ -559,6 +740,8 @@ function BasicTab({ settings, update, isPro, onUnlock }: { settings: GradeSettin
   );
 }
 
+// ── 3-Way Color Wheels Tab ───────────────────────
+
 function ThreeWayTab({ settings, update }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void }) {
   const wheels = [
     { label: "Shadows", hueKey: "shadowsHue" as const, satKey: "shadowsSat" as const, color: "var(--accent-slate)" },
@@ -578,7 +761,7 @@ function ThreeWayTab({ settings, update }: { settings: GradeSettings; update: <K
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between"><span className="text-xs text-[var(--text-muted)]">Hue</span><span className="text-xs text-[var(--text-ghost)] font-mono">{settings[w.hueKey]}°</span></div>
-              <input type="range" min={0} max={360} value={settings[w.hueKey]} onChange={(e) => update(w.hueKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              <input type="range" min={-180} max={180} value={settings[w.hueKey]} onChange={(e) => update(w.hueKey, Number(e.target.value))} className="w-full touch-manipulation" />
               <div className="flex items-center justify-between"><span className="text-xs text-[var(--text-muted)]">Saturation</span><span className="text-xs text-[var(--text-ghost)] font-mono">{settings[w.satKey]}%</span></div>
               <input type="range" min={0} max={200} value={settings[w.satKey]} onChange={(e) => update(w.satKey, Number(e.target.value))} className="w-full touch-manipulation" />
             </div>
@@ -589,29 +772,58 @@ function ThreeWayTab({ settings, update }: { settings: GradeSettings; update: <K
   );
 }
 
-function HSLTab() {
+// ── HSL Tab (wired to state) ─────────────────────
+
+function HSLTab({ settings, update }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
         <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3 block">HSL Target Isolation</label>
         <p className="text-[11px] text-[var(--text-muted)] mb-3">Adjust hue, saturation, and luminance for specific color ranges.</p>
-        {[{ label: "Reds", color: "#ef4444" }, { label: "Greens", color: "#22c55e" }, { label: "Blues", color: "#3b82f6" }].map((c) => (
-          <div key={c.label} className="rounded-xl p-3 mb-3" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", boxShadow: "var(--neo-soft)" }}>
-            <div className="flex items-center gap-2 mb-2"><div className="w-3 h-3 rounded-full" style={{ background: c.color }} /><span className="text-xs font-medium text-[var(--text-secondary)]">{c.label}</span></div>
-            <div className="space-y-1.5">
-              <span className="text-[10px] text-[var(--text-muted)]">Hue</span>
-              <input type="range" min={-180} max={180} defaultValue={0} className="w-full touch-manipulation" />
-              <span className="text-[10px] text-[var(--text-muted)]">Saturation</span>
-              <input type="range" min={0} max={200} defaultValue={100} className="w-full touch-manipulation" />
-              <span className="text-[10px] text-[var(--text-muted)]">Luminance</span>
-              <input type="range" min={0} max={200} defaultValue={100} className="w-full touch-manipulation" />
+        {HSL_CHANNELS.map((c) => {
+          const prefix = `hsl${c.key}`;
+          const hueKey = `${prefix}Hue` as keyof GradeSettings;
+          const satKey = `${prefix}Sat` as keyof GradeSettings;
+          const lumKey = `${prefix}Lum` as keyof GradeSettings;
+          const hueVal = settings[hueKey] as number;
+          const satVal = settings[satKey] as number;
+          const lumVal = settings[lumKey] as number;
+
+          return (
+            <div key={c.key} className="rounded-xl p-3 mb-3" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", boxShadow: "var(--neo-soft)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-3 h-3 rounded-full" style={{ background: c.color }} />
+                <span className="text-xs font-medium text-[var(--text-secondary)]">{c.name}</span>
+                {hueVal !== 0 && <span className="text-[9px] text-[var(--accent-teal)] font-mono">H:{hueVal > 0 ? "+" : ""}{hueVal}</span>}
+                {satVal !== 100 && <span className="text-[9px] text-[var(--accent-teal)] font-mono">S:{satVal}%</span>}
+                {lumVal !== 100 && <span className="text-[9px] text-[var(--accent-teal)] font-mono">L:{lumVal}%</span>}
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--text-muted)]">Hue</span>
+                  <span className="text-[10px] text-[var(--text-ghost)] font-mono">{hueVal > 0 ? "+" : ""}{hueVal}°</span>
+                </div>
+                <input type="range" min={-180} max={180} value={hueVal} onChange={(e) => update(hueKey, Number(e.target.value))} className="w-full touch-manipulation" />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--text-muted)]">Saturation</span>
+                  <span className="text-[10px] text-[var(--text-ghost)] font-mono">{satVal}%</span>
+                </div>
+                <input type="range" min={0} max={200} value={satVal} onChange={(e) => update(satKey, Number(e.target.value))} className="w-full touch-manipulation" />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--text-muted)]">Luminance</span>
+                  <span className="text-[10px] text-[var(--text-ghost)] font-mono">{lumVal}%</span>
+                </div>
+                <input type="range" min={0} max={200} value={lumVal} onChange={(e) => update(lumKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
+
+// ── Effects Tab ──────────────────────────────────
 
 function EffectsTab({ settings, update }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void }) {
   return (
@@ -635,15 +847,12 @@ function EffectsTab({ settings, update }: { settings: GradeSettings; update: <K 
   );
 }
 
-// ── Locked Feature Panel ──────────────────────────────
+// ── Locked Feature Panel ─────────────────────────
 
 function LockedPanel({ feature, tier, onUnlock }: { feature: string; tier: KeyTier; onUnlock: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center h-64 text-center px-4">
-      <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-        style={{ background: "var(--bg-deep)", boxShadow: "var(--neo-inset)" }}
-      >
+      <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{ background: "var(--bg-deep)", boxShadow: "var(--neo-inset)" }}>
         <Lock className="w-6 h-6 text-[var(--accent-teal)] opacity-60" />
       </div>
       <p className="text-sm text-[var(--text-muted)] mb-1">{feature}</p>
@@ -664,7 +873,7 @@ function LockedPanel({ feature, tier, onUnlock }: { feature: string; tier: KeyTi
   );
 }
 
-// ── Adjustments Panel ─────────────────────────────────
+// ── Adjustments Panel ────────────────────────────
 
 function AdjustmentsPanel({ settings, currentTier, onUnlock }: { settings: GradeSettings; currentTier: KeyTier | null; onUnlock: () => void }) {
   const active = Object.entries(settings).filter(([_, v]) => v !== 0 && v !== "none" && v !== 100);

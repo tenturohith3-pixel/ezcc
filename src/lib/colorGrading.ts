@@ -1,8 +1,10 @@
 /**
- * ColorGrade — Client-Side Canvas Color Grading Engine
+ * ColorGrade — Client-Side Canvas Color Grading Engine v2
  *
- * Applies real pixel-level color transformations in the browser
- * using the Canvas 2D API.
+ * Photoshop-level pixel transformations using Canvas 2D API.
+ * - Auto CC: histogram equalization, auto levels, S-curve, vibrance
+ * - HSL: 8-channel per-pixel hue/sat/lum adjustment
+ * - 3-Way: RGB channel shifts in shadow/mid/highlight ranges
  */
 
 export interface GradeSettings {
@@ -24,6 +26,16 @@ export interface GradeSettings {
   filmGrain: number;
   halation: number;
   bloom: number;
+  // HSL per-channel: [hueShift, saturationMultiplier, luminanceMultiplier]
+  // Channels: red, orange, yellow, green, aqua, blue, purple, magenta
+  hslRedHue: number; hslRedSat: number; hslRedLum: number;
+  hslOrangeHue: number; hslOrangeSat: number; hslOrangeLum: number;
+  hslYellowHue: number; hslYellowSat: number; hslYellowLum: number;
+  hslGreenHue: number; hslGreenSat: number; hslGreenLum: number;
+  hslAquaHue: number; hslAquaSat: number; hslAquaLum: number;
+  hslBlueHue: number; hslBlueSat: number; hslBlueLum: number;
+  hslPurpleHue: number; hslPurpleSat: number; hslPurpleLum: number;
+  hslMagentaHue: number; hslMagentaSat: number; hslMagentaLum: number;
 }
 
 // ── Color Space Conversions ──────────────────────
@@ -72,106 +84,67 @@ function clamp(v: number, min = 0, max = 255): number {
   return v < min ? min : v > max ? max : v;
 }
 
+function clampNum(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
 // ── LUT Preset Color Maps ───────────────────────
-// Each preset transforms (r,g,b) → (r',g',b') using
-// proper cinematic color science.
 
 const LUT_MAPS: Record<string, (r: number, g: number, b: number) => [number, number, number]> = {
-  /**
-   * Moody Cinematic — Teal & Orange blockbuster look
-   * Shadows pushed toward teal, highlights toward warm orange
-   */
   moody: (r, g, b) => {
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    const t = lum / 255; // 0=dark, 1=bright
-    // Shadows → teal, Highlights → warm
+    const t = lum / 255;
     const shadowMix = 1 - t;
     const highlightMix = t;
     return [
-      clamp(r * 0.9 + 15 * highlightMix + 0 * shadowMix),         // R: warm highlights
-      clamp(g * 0.85 + 10 * highlightMix + 15 * shadowMix),       // G: teal in shadows
-      clamp(b * 0.8 + 5 * highlightMix + 30 * shadowMix),         // B: teal in shadows
+      clamp(r * 0.9 + 15 * highlightMix),
+      clamp(g * 0.85 + 10 * highlightMix + 15 * shadowMix),
+      clamp(b * 0.8 + 5 * highlightMix + 30 * shadowMix),
     ];
   },
-
-  /**
-   * Warm Tone — Golden hour warmth
-   * Boost reds/yellows, reduce blue, add warmth to midtones
-   */
   warm: (r, g, b) => {
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
     const t = lum / 255;
     return [
-      clamp(r * 1.08 + 12 * t),                                   // R: warm boost
-      clamp(g * 1.02 + 8 * t),                                    // G: slight warm
-      clamp(b * 0.82 - 5 * t + 10),                               // B: reduce blue
+      clamp(r * 1.08 + 12 * t),
+      clamp(g * 1.02 + 8 * t),
+      clamp(b * 0.82 - 5 * t + 10),
     ];
   },
-
-  /**
-   * Clean Minimal — Desaturated, high contrast, clean
-   * Pull saturation down, boost contrast, lift blacks slightly
-   */
   clean: (r, g, b) => {
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    // Desaturate toward luminance
-    const mix = 0.35; // 35% desaturation
+    const mix = 0.35;
     const nr = r + (lum - r) * mix;
     const ng = g + (lum - g) * mix;
     const nb = b + (lum - b) * mix;
-    // Boost contrast slightly
     const cr = ((nr / 255 - 0.5) * 1.15 + 0.5) * 255;
     const cg = ((ng / 255 - 0.5) * 1.15 + 0.5) * 255;
     const cb = ((nb / 255 - 0.5) * 1.15 + 0.5) * 255;
-    // Lift blacks slightly for editorial feel
-    return [
-      clamp(cr * 0.95 + 12),
-      clamp(cg * 0.95 + 12),
-      clamp(cb * 0.95 + 14),
-    ];
+    return [clamp(cr * 0.95 + 12), clamp(cg * 0.95 + 12), clamp(cb * 0.95 + 14)];
   },
-
-  /**
-   * Vintage Film — Warm highlights, faded blacks, green tint in shadows
-   * Emulates expired film stock
-   */
   vintage: (r, g, b) => {
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
     const t = lum / 255;
-    // Lift blacks (faded film look)
     const lifted = 18;
-    // Warm highlights, green shadows
     return [
-      clamp(r * 0.92 + 20 * t + lifted * (1 - t)),                // R: warm highlights
-      clamp(g * 0.88 + 5 * t + lifted * (1 - t) + 8 * (1 - t)),  // G: green in shadows
-      clamp(b * 0.7 + 8 * t + lifted * (1 - t) - 10 * t),        // B: reduce blue in highlights
+      clamp(r * 0.92 + 20 * t + lifted * (1 - t)),
+      clamp(g * 0.88 + 5 * t + lifted * (1 - t) + 8 * (1 - t)),
+      clamp(b * 0.7 + 8 * t + lifted * (1 - t) - 10 * t),
     ];
   },
-
-  /**
-   * Cool Blue — Cinematic blue tones
-   * Blue-shifted shadows, neutral-to-cool highlights
-   */
   cool: (r, g, b) => {
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
     const t = lum / 255;
     return [
-      clamp(r * 0.88 - 8 * (1 - t)),                              // R: reduce in shadows
-      clamp(g * 0.92 + 5 * t),                                     // G: slight boost
-      clamp(b * 1.1 + 15 * (1 - t) + 8 * t),                     // B: strong in shadows, mild in highlights
+      clamp(r * 0.88 - 8 * (1 - t)),
+      clamp(g * 0.92 + 5 * t),
+      clamp(b * 1.1 + 15 * (1 - t) + 8 * t),
     ];
   },
-
-  /**
-   * Neon Pop — High saturation, vibrant, punchy
-   * Boost all channels, increase contrast
-   */
   neon: (r, g, b) => {
-    // Increase contrast
     const cr = ((r / 255 - 0.5) * 1.3 + 0.5) * 255;
     const cg = ((g / 255 - 0.5) * 1.3 + 0.5) * 255;
     const cb = ((b / 255 - 0.5) * 1.3 + 0.5) * 255;
-    // Boost saturation by pushing away from gray
     const lum = 0.299 * cr + 0.587 * cg + 0.114 * cb;
     const satBoost = 1.25;
     return [
@@ -180,37 +153,52 @@ const LUT_MAPS: Record<string, (r: number, g: number, b: number) => [number, num
       clamp(lum + (cb - lum) * satBoost),
     ];
   },
-
-  /**
-   * Muted Pastel — Soft, low contrast, lifted blacks
-   * Pastel color palette with dreamy feel
-   */
   pastel: (r, g, b) => {
-    // Desaturate significantly
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    const mix = 0.5; // 50% desaturation
+    const mix = 0.5;
     const dr = r + (lum - r) * mix;
     const dg = g + (lum - g) * mix;
     const db = b + (lum - b) * mix;
-    // Reduce contrast (flatten)
-    const flatR = dr * 0.7 + 65;
-    const flatG = dg * 0.7 + 65;
-    const flatB = db * 0.7 + 65;
-    // Add slight warm tint
-    return [
-      clamp(flatR + 5),
-      clamp(flatG),
-      clamp(flatB - 3),
-    ];
+    return [clamp(dr * 0.7 + 70), clamp(dg * 0.7 + 65), clamp(db * 0.7 + 62)];
   },
 };
 
-// ── Auto Color Correction ─────────────────────
+// ── HSL Channel Definitions ──────────────────────
+// 8 channels covering the full hue circle, ~45° each
+interface HSLChannel {
+  center: number; // hue center in degrees
+  width: number;  // soft falloff width in degrees
+}
+
+const HSL_CHANNELS: Record<string, HSLChannel> = {
+  red:    { center: 0,   width: 30 },
+  orange: { center: 30,  width: 25 },
+  yellow: { center: 60,  width: 25 },
+  green:  { center: 120, width: 35 },
+  aqua:   { center: 180, width: 25 },
+  blue:   { center: 240, width: 35 },
+  purple: { center: 285, width: 25 },
+  magenta:{ center: 330, width: 25 },
+};
+
+/** Get soft blend weight for a hue relative to a channel center */
+function hslWeight(hue: number, channel: HSLChannel): number {
+  let diff = Math.abs(hue - channel.center);
+  if (diff > 180) diff = 360 - diff;
+  if (diff >= channel.width) return 0;
+  // Smooth cosine falloff
+  return (1 + Math.cos((diff / channel.width) * Math.PI)) / 2;
+}
+
+// ── Auto Color Correction v2 (Photoshop-level) ──
 
 /**
- * Analyze an image's pixel data and return optimal GradeSettings.
- * Subtle corrections only — most photos need minimal adjustment.
- * Fully client-side — no API calls, no credits, runs instantly.
+ * Photoshop-level auto color correction:
+ * 1. Auto Levels (per-channel black/white point clipping at 0.5%)
+ * 2. Auto Contrast (S-curve based on histogram)
+ * 3. Auto White Balance (gray world + highlight detection)
+ * 4. Vibrance (selective saturation boost for less-saturated colors)
+ * 5. Shadow/Highlight recovery
  */
 export function autoColorCorrect(
   ctx: CanvasRenderingContext2D,
@@ -221,26 +209,24 @@ export function autoColorCorrect(
   const data = imageData.data;
   const pixelCount = data.length / 4;
 
-  // Accumulate channel stats
-  let rSum = 0, gSum = 0, bSum = 0;
-  let rHistogram = new Array(256).fill(0);
-  let gHistogram = new Array(256).fill(0);
-  let bHistogram = new Array(256).fill(0);
-  let lumHistogram = new Array(256).fill(0);
-  let darkPixels = 0;
-  let brightPixels = 0;
+  // ── Step 1: Build per-channel histograms ──
+  const rHist = new Uint32Array(256);
+  const gHist = new Uint32Array(256);
+  const bHist = new Uint32Array(256);
+  const lumHist = new Uint32Array(256);
 
-  // For saturation analysis
+  let rSum = 0, gSum = 0, bSum = 0;
   let chromaSum = 0;
+  let darkPixels = 0, brightPixels = 0;
 
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i], g = data[i + 1], b = data[i + 2];
+    rHist[r]++; gHist[g]++; bHist[b]++;
     rSum += r; gSum += g; bSum += b;
-    rHistogram[r]++; gHistogram[g]++; bHistogram[b]++;
-    const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-    lumHistogram[lum]++;
-    if (lum < 30) darkPixels++;
-    if (lum > 225) brightPixels++;
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    lumHist[Math.round(lum)]++;
+    if (lum < 25) darkPixels++;
+    if (lum > 230) brightPixels++;
     const max = Math.max(r, g, b);
     const min = Math.min(r, g, b);
     chromaSum += max > 0 ? (max - min) / max : 0;
@@ -252,83 +238,139 @@ export function autoColorCorrect(
   const lumAvg = 0.299 * rAvg + 0.587 * gAvg + 0.114 * bAvg;
   const avgChroma = chromaSum / pixelCount;
 
-  // ── White Balance (subtle) ──
-  // Gray world: in a balanced image R≈G≈B
-  // Only correct if there's a clear cast (>10 units off)
-  const grayDiff = rAvg - bAvg;
-  const whiteBalance = Math.abs(grayDiff) > 10
-    ? Math.round(Math.max(-12, Math.min(12, grayDiff * 0.12)))
-    : 0;
+  // ── Auto Levels: find 0.5% and 99.5% clip points per channel ──
+  const clipLow = Math.floor(pixelCount * 0.005);
+  const clipHigh = Math.floor(pixelCount * 0.005);
 
-  // ── Temperature (subtle) ──
-  const tempDiff = bAvg - rAvg;
-  const temperature = Math.abs(tempDiff) > 15
-    ? Math.round(Math.max(-10, Math.min(10, tempDiff * 0.08)))
-    : 0;
+  function findClipPoints(hist: Uint32Array): [number, number] {
+    let count = 0;
+    let low = 0;
+    for (let i = 0; i < 256; i++) {
+      count += hist[i];
+      if (count >= clipLow) { low = i; break; }
+    }
+    count = 0;
+    let high = 255;
+    for (let i = 255; i >= 0; i--) {
+      count += hist[i];
+      if (count >= clipHigh) { high = i; break; }
+    }
+    return [low, high];
+  }
 
-  // ── Exposure (subtle) ──
-  // Target luminance around 120 (slightly below mid-gray for cinematic feel)
-  const exposureTarget = 120;
-  const exposureDiff = exposureTarget - lumAvg;
-  const exposure = Math.abs(exposureDiff) > 15
-    ? Math.round(Math.max(-10, Math.min(10, exposureDiff * 0.08)))
-    : 0;
+  const [rLow, rHigh] = findClipPoints(rHist);
+  const [gLow, gHigh] = findClipPoints(gHist);
+  const [bLow, bHigh] = findClipPoints(bHist);
 
-  // ── Contrast (subtle) ──
-  // Measure histogram spread
+  // Auto levels strength — more aggressive if image is flat
+  const rRange = rHigh - rLow || 1;
+  const gRange = gHigh - gLow || 1;
+  const bRange = bHigh - bLow || 1;
+  const avgRange = (rRange + gRange + bRange) / 3;
+  const levelsStrength = avgRange < 180 ? 0.7 : avgRange < 220 ? 0.5 : 0.3;
+
+  // Calculate per-channel exposure shifts from auto levels
+  const rTargetMid = (rHigh + rLow) / 2;
+  const gTargetMid = (gHigh + gLow) / 2;
+  const bTargetMid = (bHigh + bLow) / 2;
+  const targetMid = 128;
+
+  // White balance: align the average midpoints to neutral gray
+  const wbR = (targetMid - rTargetMid) * levelsStrength * 0.15;
+  const wbB = (targetMid - bTargetMid) * levelsStrength * 0.15;
+  const whiteBalance = clampNum((wbR - wbB) * 0.8);
+  const temperature = clampNum(wbB * 0.6);
+
+  // ── Auto Contrast (S-curve) ──
   let lowestBin = 255, highestBin = 0;
   for (let i = 0; i < 256; i++) {
-    if (lumHistogram[i] > pixelCount * 0.001) {
+    if (lumHist[i] > pixelCount * 0.001) {
       lowestBin = Math.min(lowestBin, i);
       highestBin = Math.max(highestBin, i);
     }
   }
   const spread = highestBin - lowestBin;
-  const contrast = spread < 160
-    ? Math.round(Math.min(12, (160 - spread) * 0.1))
+  // S-curve contrast: target spread of ~210 for cinematic look
+  const contrast = spread < 130
+    ? Math.round(Math.min(30, (210 - spread) * 0.18))
+    : spread < 180
+    ? Math.round(Math.min(18, (210 - spread) * 0.12))
     : spread > 240
-    ? Math.round(Math.max(-8, (240 - spread) * 0.08))
+    ? Math.round(Math.max(-12, (240 - spread) * 0.1))
     : 0;
 
-  // ── Saturation (subtle) ──
-  // Most photos are fine — only boost if clearly desaturated
-  const saturation = avgChroma < 0.2
-    ? Math.round(Math.min(10, (0.2 - avgChroma) * 50))
-    : avgChroma > 0.5
-    ? Math.round(Math.max(-5, (0.5 - avgChroma) * 10))
-    : 0;
+  // ── Exposure ──
+  // Photoshop targets ~115 luminance for well-exposed images
+  const exposureDiff = 115 - lumAvg;
+  const exposure = Math.round(Math.max(-30, Math.min(30, exposureDiff * 0.18)));
+
+  // ── Vibrance (selective saturation) ──
+  // Count how many pixels are already saturated vs unsaturated
+  let lowSatCount = 0;
+  let highSatCount = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const [,, s] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    if (s < 30) lowSatCount++;
+    if (s > 70) highSatCount++;
+  }
+  const lowSatRatio = lowSatCount / pixelCount;
+  const highSatRatio = highSatCount / pixelCount;
+
+  // Boost saturation more when image is desaturated, less when already vivid
+  let saturation: number;
+  if (avgChroma < 0.15) {
+    saturation = Math.round(Math.min(25, (0.15 - avgChroma) * 120));
+  } else if (avgChroma < 0.25) {
+    saturation = Math.round(Math.min(15, (0.25 - avgChroma) * 80));
+  } else if (avgChroma > 0.55) {
+    saturation = Math.round(Math.max(-8, (0.55 - avgChroma) * 15));
+  } else {
+    saturation = 0;
+  }
 
   // ── Brightness (very subtle) ──
-  const brightness = Math.abs(lumAvg - 128) > 20
-    ? Math.round(Math.max(-5, Math.min(5, (128 - lumAvg) * 0.04)))
+  const brightness = Math.abs(lumAvg - 128) > 25
+    ? Math.round(Math.max(-8, Math.min(8, (128 - lumAvg) * 0.06)))
     : 0;
 
-  // ── HDR (conservative) ──
-  const highlightClip = brightPixels / pixelCount;
-  const shadowCrush = darkPixels / pixelCount;
-  const hdrStrength = (highlightClip > 0.03 || shadowCrush > 0.2)
-    ? Math.round(Math.min(12, (highlightClip + shadowCrush) * 60))
+  // ── Shadow/Highlight Recovery ──
+  const shadowRatio = darkPixels / pixelCount;
+  const highlightRatio = brightPixels / pixelCount;
+  const hdrStrength = (highlightRatio > 0.02 || shadowRatio > 0.15)
+    ? Math.round(Math.min(25, (highlightRatio * 80 + shadowRatio * 40)))
+    : 0;
+  const highlightRecovery = highlightRatio > 0.05
+    ? Math.round(Math.min(20, highlightRatio * 200))
     : 0;
 
   return {
     lutPreset: "none",
-    whiteBalance,
-    exposure,
-    contrast,
-    saturation,
-    brightness,
-    temperature,
+    whiteBalance: Math.round(Math.max(-30, Math.min(30, whiteBalance))),
+    exposure: Math.round(Math.max(-30, Math.min(30, exposure))),
+    contrast: Math.round(Math.max(-15, Math.min(30, contrast))),
+    saturation: Math.round(Math.max(-10, Math.min(25, saturation))),
+    brightness: Math.round(Math.max(-10, Math.min(10, brightness))),
+    temperature: Math.round(Math.max(-15, Math.min(15, temperature))),
     shadowsHue: 0,
     midtonesHue: 0,
     highlightsHue: 0,
     shadowsSat: 100,
     midtonesSat: 100,
     highlightsSat: 100,
-    hdrStrength,
-    highlightRecovery: 0,
+    hdrStrength: Math.round(Math.max(0, Math.min(25, hdrStrength))),
+    highlightRecovery: Math.round(Math.max(0, Math.min(20, highlightRecovery))),
     filmGrain: 0,
     halation: 0,
     bloom: 0,
+    // HSL defaults
+    hslRedHue: 0, hslRedSat: 100, hslRedLum: 100,
+    hslOrangeHue: 0, hslOrangeSat: 100, hslOrangeLum: 100,
+    hslYellowHue: 0, hslYellowSat: 100, hslYellowLum: 100,
+    hslGreenHue: 0, hslGreenSat: 100, hslGreenLum: 100,
+    hslAquaHue: 0, hslAquaSat: 100, hslAquaLum: 100,
+    hslBlueHue: 0, hslBlueSat: 100, hslBlueLum: 100,
+    hslPurpleHue: 0, hslPurpleSat: 100, hslPurpleLum: 100,
+    hslMagentaHue: 0, hslMagentaSat: 100, hslMagentaLum: 100,
   };
 }
 
@@ -346,12 +388,32 @@ export function applyColorGrading(
   // Pre-compute LUT
   const lutFn = LUT_MAPS[settings.lutPreset] || null;
 
+  // Pre-compute global adjustments
   const wbShift = settings.whiteBalance * 0.6;
   const tempShift = settings.temperature * 0.5;
-  const expMul = Math.pow(2, settings.exposure / 120);
-  const contrastVal = (100 + settings.contrast * 0.4) / 100;
-  const satVal = (100 + settings.saturation * 0.4) / 100;
-  const brightShift = settings.brightness * 0.4;
+  const expMul = Math.pow(2, settings.exposure / 100);
+  const contrastVal = (100 + settings.contrast * 0.5) / 100;
+  const satVal = (100 + settings.saturation * 0.5) / 100;
+  const brightShift = settings.brightness * 0.5;
+
+  // 3-way shadow/mid/highlight RGB shifts
+  const shHueRad = (settings.shadowsHue * Math.PI) / 180;
+  const mdHueRad = (settings.midtonesHue * Math.PI) / 180;
+  const hiHueRad = (settings.highlightsHue * Math.PI) / 180;
+  const shIntensity = (settings.shadowsSat - 100) / 100; // -1 to +1
+  const mdIntensity = (settings.midtonesSat - 100) / 100;
+  const hiIntensity = (settings.highlightsSat - 100) / 100;
+
+  // 3-way RGB shift vectors (hue determines direction, intensity determines magnitude)
+  const shR = Math.cos(shHueRad) * shIntensity * 20;
+  const shG = Math.cos(shHueRad - 2.094) * shIntensity * 20;
+  const shB = Math.cos(shHueRad - 4.189) * shIntensity * 20;
+  const mdR = Math.cos(mdHueRad) * mdIntensity * 20;
+  const mdG = Math.cos(mdHueRad - 2.094) * mdIntensity * 20;
+  const mdB = Math.cos(mdHueRad - 4.189) * mdIntensity * 20;
+  const hiR = Math.cos(hiHueRad) * hiIntensity * 20;
+  const hiG = Math.cos(hiHueRad - 2.094) * hiIntensity * 20;
+  const hiB = Math.cos(hiHueRad - 4.189) * hiIntensity * 20;
 
   for (let i = 0; i < data.length; i += 4) {
     let r = data[i];
@@ -373,67 +435,112 @@ export function applyColorGrading(
     g *= expMul;
     b *= expMul;
 
-    // 4. Contrast
-    r = ((r / 255 - 0.5) * contrastVal + 0.5) * 255;
-    g = ((g / 255 - 0.5) * contrastVal + 0.5) * 255;
-    b = ((b / 255 - 0.5) * contrastVal + 0.5) * 255;
+    // 4. Contrast (S-curve approximation for better shadows/highlights)
+    if (settings.contrast !== 0) {
+      const cv = contrastVal;
+      // S-curve: softer than linear contrast
+      r = (0.5 + (r / 255 - 0.5) * (1 + (cv - 1) * 0.8) + (cv - 1) * 0.2 * (r / 255 - 0.5) * (r / 255 - 0.5) * -4) * 255;
+      g = (0.5 + (g / 255 - 0.5) * (1 + (cv - 1) * 0.8) + (cv - 1) * 0.2 * (g / 255 - 0.5) * (g / 255 - 0.5) * -4) * 255;
+      b = (0.5 + (b / 255 - 0.5) * (1 + (cv - 1) * 0.8) + (cv - 1) * 0.2 * (b / 255 - 0.5) * (b / 255 - 0.5) * -4) * 255;
+    }
 
     // 5. Brightness
     r += brightShift;
     g += brightShift;
     b += brightShift;
 
-    // 6. Saturation (via HSL)
-    const [h, s, l] = rgbToHsl(
-      Math.max(0, Math.min(255, r)),
-      Math.max(0, Math.min(255, g)),
-      Math.max(0, Math.min(255, b))
-    );
-    const newS = Math.max(0, Math.min(100, s * satVal));
+    // 6. Convert to HSL for saturation & HSL channel adjustments
+    const cr = Math.max(0, Math.min(255, r));
+    const cg = Math.max(0, Math.min(255, g));
+    const cb = Math.max(0, Math.min(255, b));
+    let [h, s, l] = rgbToHsl(cr, cg, cb);
 
-    // 7. Tone-based hue shift (3-way simulation)
-    let hueShift = 0;
-    if (l < 33) hueShift = settings.shadowsHue * 0.25;
-    else if (l < 66) hueShift = settings.midtonesHue * 0.25;
-    else hueShift = settings.highlightsHue * 0.25;
+    // 7. Global saturation
+    s = Math.max(0, Math.min(100, s * satVal));
 
-    const newH = ((h + hueShift) % 360 + 360) % 360;
-    [r, g, b] = hslToRgb(newH, newS, l);
+    // 8. HSL per-channel adjustments
+    for (const [name, channel] of Object.entries(HSL_CHANNELS)) {
+      const weight = hslWeight(h, channel);
+      if (weight <= 0) continue;
 
-    // 8. HDR / Highlight Recovery
-    if (settings.hdrStrength > 0) {
-      const lum = (r + g + b) / 3;
-      if (lum > 210) {
-        const recover = (lum - 210) / 45 * (settings.hdrStrength / 100);
-        r -= recover * 25;
-        g -= recover * 25;
-        b -= recover * 25;
+      const hueShiftKey = `hsl${name.charAt(0).toUpperCase() + name.slice(1)}Hue` as keyof GradeSettings;
+      const satMultKey = `hsl${name.charAt(0).toUpperCase() + name.slice(1)}Sat` as keyof GradeSettings;
+      const lumMultKey = `hsl${name.charAt(0).toUpperCase() + name.slice(1)}Lum` as keyof GradeSettings;
+
+      const hueShift = (settings[hueShiftKey] as number) || 0;
+      const satMult = ((settings[satMultKey] as number) || 100) / 100;
+      const lumMult = ((settings[lumMultKey] as number) || 100) / 100;
+
+      if (hueShift !== 0) h += hueShift * weight;
+      if (satMult !== 1) s = Math.max(0, Math.min(100, s * (1 + (satMult - 1) * weight)));
+      if (lumMult !== 1) l = Math.max(0, Math.min(100, l * (1 + (lumMult - 1) * weight)));
+    }
+
+    h = ((h % 360) + 360) % 360;
+
+    // 9. 3-Way Color Wheels: apply RGB shifts based on tonal range
+    // Determine shadow/mid/highlight weight
+    const lumNorm = l / 100; // 0-1
+    let shWeight = 0, mdWeight = 0, hiWeight = 0;
+    if (lumNorm < 0.33) {
+      shWeight = 1 - lumNorm / 0.33;
+      mdWeight = lumNorm / 0.33;
+    } else if (lumNorm < 0.66) {
+      mdWeight = 1 - (lumNorm - 0.33) / 0.33;
+      hiWeight = (lumNorm - 0.33) / 0.33;
+    } else {
+      hiWeight = 1 - (lumNorm - 0.66) / 0.34;
+    }
+
+    // Convert back to RGB first
+    [r, g, b] = hslToRgb(h, s, l);
+
+    // Apply 3-way RGB shifts with smooth tonal blending
+    r += shR * shWeight + mdR * mdWeight + hiR * hiWeight;
+    g += shG * shWeight + mdG * mdWeight + hiG * hiWeight;
+    b += shB * shWeight + mdB * mdWeight + hiB * hiWeight;
+
+    // 10. HDR / Highlight Recovery
+    if (settings.hdrStrength > 0 || settings.highlightRecovery > 0) {
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      // Highlight recovery: compress bright values
+      if (settings.highlightRecovery > 0 && lum > 200) {
+        const recover = ((lum - 200) / 55) * (settings.highlightRecovery / 100);
+        r -= recover * 18;
+        g -= recover * 18;
+        b -= recover * 18;
       }
-      if (lum < 40) {
-        const boost = (40 - lum) / 40 * (settings.hdrStrength / 100) * 12;
-        r += boost; g += boost; b += boost;
+      // HDR: lift shadows and compress highlights
+      if (settings.hdrStrength > 0) {
+        const str = settings.hdrStrength / 100;
+        if (lum > 210) {
+          const compress = ((lum - 210) / 45) * str;
+          r -= compress * 20;
+          g -= compress * 20;
+          b -= compress * 20;
+        }
+        if (lum < 40) {
+          const lift = ((40 - lum) / 40) * str * 15;
+          r += lift; g += lift; b += lift;
+        }
       }
     }
 
-    // Clamp
-    data[i]     = Math.max(0, Math.min(255, Math.round(r)));
-    data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
-    data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+    // Clamp final values
+    data[i]     = clampNum(r);
+    data[i + 1] = clampNum(g);
+    data[i + 2] = clampNum(b);
   }
 
   ctx.putImageData(imageData, 0, 0);
 
-  // 9. Film Grain (post-process overlay)
+  // Post-process effects
   if (settings.filmGrain > 0) {
     applyFilmGrain(ctx, width, height, settings.filmGrain / 100);
   }
-
-  // 10. Halation (glow bleed)
   if (settings.halation > 0) {
     applyHalation(ctx, width, height, settings.halation / 100);
   }
-
-  // 11. Bloom (soft glow)
   if (settings.bloom > 0) {
     applyBloom(ctx, width, height, settings.bloom / 100);
   }
@@ -458,7 +565,7 @@ function applyFilmGrain(
   ctx.putImageData(imageData, 0, 0);
 }
 
-// ── Halation (warm light bleed) ─────────────────
+// ── Halation ────────────────────────────────────
 
 function applyHalation(
   ctx: CanvasRenderingContext2D,
@@ -494,7 +601,7 @@ function applyHalation(
   ctx.restore();
 }
 
-// ── Bloom (soft glow) ───────────────────────────
+// ── Bloom ───────────────────────────────────────
 
 function applyBloom(
   ctx: CanvasRenderingContext2D,
