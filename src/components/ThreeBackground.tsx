@@ -5,7 +5,6 @@ import * as THREE from "three";
 
 export default function ThreeBackground() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const frameRef = useRef<number>(0);
 
   useEffect(() => {
@@ -23,44 +22,40 @@ export default function ThreeBackground() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
 
-    // Lighting
+    // Lighting — exact from reference
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
-    const pointLight = new THREE.PointLight(0x7dd3fc, 2);
+    const pointLight = new THREE.PointLight(0x7dd3fc, 1.5);
     pointLight.position.set(10, 10, 10);
     scene.add(pointLight);
-    const pointLight2 = new THREE.PointLight(0x00f0ff, 2);
-    pointLight2.position.set(-10, -10, -10);
-    scene.add(pointLight2);
 
-    // Ethereal Ribbons
+    // Ethereal Ribbons — exact from reference: 5 ribbons
     const ribbons: {
       mesh: THREE.Mesh;
       curve: THREE.CatmullRomCurve3;
       offset: number;
     }[] = [];
-    const ribbonCount = 7;
-    const colors = [0x7dd3fc, 0x00f0ff, 0x0ea5e9, 0x38bdf8, 0x7dd3fc, 0xbae6fd, 0x0284c7];
+    const ribbonCount = 5;
+    const colors = [0x7dd3fc, 0x00f0ff, 0x8b5cf6, 0x3b82f6, 0x7dd3fc];
 
     for (let i = 0; i < ribbonCount; i++) {
       const curve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(-25, Math.random() * 15 - 7.5, Math.random() * 8 - 4),
-        new THREE.Vector3(-12, Math.random() * 15 - 7.5, Math.random() * 8 - 4),
-        new THREE.Vector3(0, Math.random() * 15 - 7.5, Math.random() * 8 - 4),
-        new THREE.Vector3(12, Math.random() * 15 - 7.5, Math.random() * 8 - 4),
-        new THREE.Vector3(25, Math.random() * 15 - 7.5, Math.random() * 8 - 4),
+        new THREE.Vector3(-20, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
+        new THREE.Vector3(-10, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
+        new THREE.Vector3(0, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
+        new THREE.Vector3(10, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
+        new THREE.Vector3(20, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
       ]);
 
-      const geometry = new THREE.TubeGeometry(curve, 120, 0.15, 8, false);
+      const geometry = new THREE.TubeGeometry(curve, 100, 0.1, 8, false);
       const material = new THREE.MeshPhysicalMaterial({
         color: colors[i],
         emissive: colors[i],
-        emissiveIntensity: 1.2,
+        emissiveIntensity: 0.8,
         transparent: true,
-        opacity: 0.6,
-        metalness: 0.8,
+        opacity: 0.4,
+        metalness: 0.5,
         roughness: 0.1,
       });
 
@@ -86,8 +81,8 @@ export default function ThreeBackground() {
       ribbons.forEach((ribbon) => {
         ribbon.mesh.rotation.x = Math.sin(time * 0.5 + ribbon.offset) * 0.2;
         ribbon.mesh.rotation.y = Math.cos(time * 0.3 + ribbon.offset) * 0.2;
-        ribbon.mesh.position.x += (mouseX * 3 - ribbon.mesh.position.x) * 0.02;
-        ribbon.mesh.position.y += (mouseY * 3 - ribbon.mesh.position.y) * 0.02;
+        ribbon.mesh.position.x += (mouseX * 2 - ribbon.mesh.position.x) * 0.01;
+        ribbon.mesh.position.y += (mouseY * 2 - ribbon.mesh.position.y) * 0.01;
       });
 
       renderer.render(scene, camera);
@@ -113,9 +108,6 @@ export default function ThreeBackground() {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 z-[-1] pointer-events-none"
-    />
+    <div ref={containerRef} className="fixed inset-0 z-[-1] pointer-events-none" />
   );
 }

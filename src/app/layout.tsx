@@ -1,24 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import LoadingScreen from "@/components/LoadingScreen";
 import CookieConsent from "@/components/CookieConsent";
 import "./globals.css";
 
 const inter = Inter({
   variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space",
-  subsets: ["latin"],
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-});
-
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
   subsets: ["latin"],
   display: "swap",
 });
@@ -61,12 +48,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${spaceGrotesk.variable} ${jetbrains.variable}`}>
-      <body className="min-h-screen bg-background text-foreground antialiased noise grain">
+    <html lang="en" className={`dark ${inter.variable}`}>
+      <head>
+        {/* Material Symbols for feature icons */}
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+      </head>
+      <body className="min-h-screen antialiased overflow-x-hidden">
         <LoadingScreen />
         {children}
         <CookieConsent />
-        <div id="cursor-dot" className="cursor-dot hidden lg:block" />
       </body>
     </html>
   );

@@ -3,13 +3,14 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
+/* ── 3D Shape Component ─────────────────────────────────── */
+
 interface FeatureShapeProps {
   shape: "cube" | "sphere" | "torus";
 }
 
 function FeatureShape({ shape }: FeatureShapeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const frameRef = useRef<number>(0);
 
   useEffect(() => {
@@ -17,7 +18,7 @@ function FeatureShape({ shape }: FeatureShapeProps) {
     if (!container) return;
 
     const width = container.clientWidth;
-    const height = 200;
+    const height = 220;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
@@ -27,7 +28,6 @@ function FeatureShape({ shape }: FeatureShapeProps) {
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
 
     let geometry: THREE.BufferGeometry;
     if (shape === "cube") {
@@ -41,11 +41,11 @@ function FeatureShape({ shape }: FeatureShapeProps) {
     const material = new THREE.MeshPhysicalMaterial({
       color: 0x7dd3fc,
       emissive: 0x0a4c6e,
-      emissiveIntensity: 0.3,
-      metalness: 0.3,
+      emissiveIntensity: 0.2,
+      metalness: 0.2,
       roughness: 0.1,
       transmission: 0.9,
-      thickness: 0.8,
+      thickness: 0.5,
       transparent: true,
       opacity: 0.9,
       wireframe: true,
@@ -54,14 +54,13 @@ function FeatureShape({ shape }: FeatureShapeProps) {
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
     const pointLight = new THREE.PointLight(0x7dd3fc, 2);
     pointLight.position.set(5, 5, 5);
     scene.add(pointLight);
 
-    const pointLight2 = new THREE.PointLight(0x00f0ff, 1);
+    const pointLight2 = new THREE.PointLight(0xc0d8e8, 1);
     pointLight2.position.set(-5, -5, 5);
     scene.add(pointLight2);
 
@@ -69,8 +68,7 @@ function FeatureShape({ shape }: FeatureShapeProps) {
       frameRef.current = requestAnimationFrame(animate);
       mesh.rotation.x += 0.003;
       mesh.rotation.y += 0.005;
-      const time = Date.now() * 0.001;
-      mesh.position.y = Math.sin(time) * 0.1;
+      mesh.position.y = Math.sin(Date.now() * 0.001) * 0.1;
       renderer.render(scene, camera);
     }
     animate();
@@ -94,60 +92,59 @@ function FeatureShape({ shape }: FeatureShapeProps) {
     };
   }, [shape]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="w-full h-[200px] bg-transparent mb-6 transition-transform duration-500 group-hover:scale-105"
-    />
-  );
+  return <div ref={containerRef} className="w-full h-[220px] bg-transparent mb-8" />;
 }
+
+/* ── Features Section — exact from reference ─────────── */
 
 const features = [
   {
     shape: "cube" as const,
+    icon: "tune",
     title: "Standard LUTs",
-    description:
-      "Access a vast library of cinematic looks or import your own .cube files for instant styling.",
+    description: "Access a vast library of cinematic looks or import your own .cube files for instant styling.",
   },
   {
     shape: "sphere" as const,
+    icon: "wb_auto",
     title: "Auto White Balance",
-    description:
-      "Intelligent temperature and tint adjustments to correct your footage with a single click.",
+    description: "Intelligent temperature and tint adjustments to correct your footage with a single click.",
   },
   {
     shape: "torus" as const,
+    icon: "contrast",
     title: "Contrast & Saturation",
-    description:
-      "Fine-tune tonal ranges and color intensity with precision curves and color wheels.",
+    description: "Fine-tune tonal ranges and color intensity with precision curves and color wheels.",
   },
 ];
 
 export default function Features() {
   return (
-    <section id="features" className="py-20 md:py-32 px-5 md:px-12 lg:px-16 max-w-screen-2xl mx-auto relative z-10">
-      {/* Section Header */}
-      <div className="text-center mb-12 md:mb-16">
-        <h2 className="text-[clamp(1.8rem,4vw,3rem)] md:text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-gradient mb-4">
+    <section className="py-32 px-5 md:px-16 max-w-screen-2xl mx-auto relative z-10">
+      {/* Section Header — exact from reference */}
+      <div className="text-center mb-20">
+        <h2 className="text-[48px] leading-[56px] tracking-[-0.02em] font-bold text-gradient mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>
           Everything You Need to Grade Like a Pro
         </h2>
-        <p className="text-base md:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto">
+        <p className="text-[18px] leading-[32px] text-[#a0b4c4] max-w-2xl mx-auto font-light" style={{ fontFamily: "'Inter', sans-serif" }}>
           Advanced color grading tools, reimagined for a fluid, creative workflow.
         </p>
       </div>
 
-      {/* Feature Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+      {/* Feature Cards — exact from reference */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {features.map((feature) => (
-          <div
-            key={feature.title}
-            className="glacier-card rounded-2xl p-6 flex flex-col items-center text-center group"
-          >
+          <div key={feature.title} className="glacier-card rounded-3xl p-8 flex flex-col items-center text-center">
             <FeatureShape shape={feature.shape} />
-            <h3 className="text-xl md:text-2xl text-[var(--accent-teal)] mb-3 font-semibold">
-              {feature.title}
-            </h3>
-            <p className="text-sm md:text-base text-[var(--text-secondary)] leading-relaxed">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-[#7dd3fc] text-3xl font-light" style={{ fontVariationSettings: "'FILL' 0" }}>
+                {feature.icon}
+              </span>
+              <h3 className="text-[24px] text-[#7dd3fc] font-semibold" style={{ fontFamily: "'Inter', sans-serif" }}>
+                {feature.title}
+              </h3>
+            </div>
+            <p className="text-[16px] leading-[28px] text-[#a0b4c4] leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
               {feature.description}
             </p>
           </div>
