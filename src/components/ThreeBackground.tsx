@@ -23,29 +23,39 @@ export default function ThreeBackground() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
-    // Lighting — exact from reference
+    // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
     const pointLight = new THREE.PointLight(0x7dd3fc, 1.5);
     pointLight.position.set(10, 10, 10);
     scene.add(pointLight);
 
-    // Ethereal Ribbons — exact from reference: 5 ribbons
+    // Diagonal Ribbons — extend far beyond screen so ends are invisible
     const ribbons: {
       mesh: THREE.Mesh;
-      curve: THREE.CatmullRomCurve3;
       offset: number;
     }[] = [];
-    const ribbonCount = 5;
     const colors = [0x7dd3fc, 0x00f0ff, 0x8b5cf6, 0x3b82f6, 0x7dd3fc];
 
-    for (let i = 0; i < ribbonCount; i++) {
+    // Diagonal directions: bottom-left → top-right, with variation
+    const diagonals = [
+      { sx: -50, sy: -30, ex: 50, ey: 30 },  // bottom-left to top-right
+      { sx: -45, sy: -25, ex: 45, ey: 25 },   // steeper diagonal
+      { sx: -40, sy: -28, ex: 40, ey: 28 },   // medium diagonal
+      { sx: -48, sy: -22, ex: 48, ey: 22 },   // shallower diagonal
+      { sx: -42, sy: -32, ex: 42, ey: 32 },   // steep diagonal
+    ];
+
+    for (let i = 0; i < 5; i++) {
+      const d = diagonals[i];
+      const spread = 3; // perpendicular spread variation
+
       const curve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(-20, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
-        new THREE.Vector3(-10, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
-        new THREE.Vector3(0, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
-        new THREE.Vector3(10, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
-        new THREE.Vector3(20, Math.random() * 10 - 5, Math.random() * 5 - 2.5),
+        new THREE.Vector3(d.sx, d.sy + (Math.random() - 0.5) * spread, (Math.random() - 0.5) * 4),
+        new THREE.Vector3(d.sx * 0.5, (d.sy + d.ey) * 0.3 + (Math.random() - 0.5) * spread, (Math.random() - 0.5) * 3),
+        new THREE.Vector3(0, (d.sy + d.ey) * 0.5 + (Math.random() - 0.5) * spread, (Math.random() - 0.5) * 3),
+        new THREE.Vector3(d.ex * 0.5, (d.sy + d.ey) * 0.7 + (Math.random() - 0.5) * spread, (Math.random() - 0.5) * 3),
+        new THREE.Vector3(d.ex, d.ey + (Math.random() - 0.5) * spread, (Math.random() - 0.5) * 4),
       ]);
 
       const geometry = new THREE.TubeGeometry(curve, 100, 0.1, 8, false);
@@ -61,7 +71,7 @@ export default function ThreeBackground() {
 
       const mesh = new THREE.Mesh(geometry, material);
       scene.add(mesh);
-      ribbons.push({ mesh, curve, offset: Math.random() * Math.PI * 2 });
+      ribbons.push({ mesh, offset: Math.random() * Math.PI * 2 });
     }
 
     camera.position.z = 15;
@@ -79,8 +89,8 @@ export default function ThreeBackground() {
       const time = Date.now() * 0.001;
 
       ribbons.forEach((ribbon) => {
-        ribbon.mesh.rotation.x = Math.sin(time * 0.5 + ribbon.offset) * 0.2;
-        ribbon.mesh.rotation.y = Math.cos(time * 0.3 + ribbon.offset) * 0.2;
+        ribbon.mesh.rotation.x = Math.sin(time * 0.5 + ribbon.offset) * 0.15;
+        ribbon.mesh.rotation.y = Math.cos(time * 0.3 + ribbon.offset) * 0.15;
         ribbon.mesh.position.x += (mouseX * 2 - ribbon.mesh.position.x) * 0.01;
         ribbon.mesh.position.y += (mouseY * 2 - ribbon.mesh.position.y) * 0.01;
       });
