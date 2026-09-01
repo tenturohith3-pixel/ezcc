@@ -109,10 +109,15 @@ export default function ColorToolPage() {
   const videoFrameRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
 
+  // Drag tracking for low-res preview
+  const isDragging = useRef(false);
+  const pendingRender = useRef(false);
+  const lastSettingsStr = useRef("");
+
   const isPro = currentTier !== null;
   const hasMedia = !!uploadedImage || !!uploadedVideo;
 
-  // Resize detection
+  // Resize
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -120,7 +125,7 @@ export default function ColorToolPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // Expiry check
+  // Expiry
   useEffect(() => {
     const id = setInterval(() => {
       setExpiryLevel(getExpirationLevel());
@@ -129,17 +134,17 @@ export default function ColorToolPage() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Performance: Debounced rendering via rAF ──
-  const renderCanvas = useCallback(() => {
-    if (uploadedVideo) return; // video has its own loop
+  // ── Core render function — supports quality levels ──
+  const renderAtQuality = useCallback((quality: "low" | "high") => {
+    if (uploadedVideo) return;
     const canvas = canvasRef.current;
     const img = imageRef.current;
     if (!canvas || !img || !showPreview) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Use reduced resolution for faster preview
-    const maxDim = isMobile ? 800 : 1600;
+    // Max dimension: low=300px (instant), high=1600px (full quality)
+    const maxDim = quality === "low" ? 300 : (isMobile ? 800 : 1600);
     const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
     const w = Math.round(img.naturalWidth * scale);
     const h = Math.round(img.naturalHeight * scale);
@@ -152,15 +157,50 @@ export default function ColorToolPage() {
     setProcessingTime(Math.round(performance.now() - start));
   }, [settings, showPreview, uploadedVideo, isMobile]);
 
-  // Debounced render: cancel previous rAF, schedule new one
-  const scheduleRender = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(renderCanvas);
-  }, [renderCanvas]);
+  // Low-res render (for slider drag — fast)
+  const renderLowRes = useCallback(() => {
+    if (isDragging.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => renderAtQuality("low"));
+    }
+  }, [renderAtQuality]);
 
+  // High-res render (on release or after settle)
+  const renderHighRes = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => renderAtQuality("high"));
+  }, [renderAtQuality]);
+
+  // Re-render when settings change — low-res during drag, high-res otherwise
   useEffect(() => {
-    if (uploadedImage && !uploadedVideo) scheduleRender();
-  }, [settings, uploadedImage, scheduleRender, uploadedVideo]);
+    if (!uploadedImage || uploadedVideo) return;
+    const s = JSON.stringify(settings);
+    if (s === lastSettingsStr.current) return;
+    lastSettingsStr.current = s;
+
+    if (isDragging.current) {
+      renderLowRes();
+    } else {
+      renderHighRes();
+    }
+  }, [settings, uploadedImage, uploadedVideo, renderLowRes, renderHighRes]);
+
+  // Full-res render after drag ends
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onPointerUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        // Switch to full quality after a tiny delay to let state settle
+        setTimeout(() => renderHighRes(), 16);
+      }
+    };
+
+    window.addEventListener("pointerup", onPointerUp);
+    return () => window.removeEventListener("pointerup", onPointerUp);
+  }, [renderHighRes]);
 
   // ── Video frame loop ──
   useEffect(() => {
@@ -174,11 +214,16 @@ export default function ColorToolPage() {
     let running = true;
     const processFrame = () => {
       if (!running || video.paused || video.ended) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
+      // Process video at lower res for performance
+      const maxDim = isMobile ? 480 : 720;
+      const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
       const start = performance.now();
-      applyColorGrading(ctx, canvas.width, canvas.height, settings);
+      applyColorGrading(ctx, w, h, settings);
       setProcessingTime(Math.round(performance.now() - start));
       videoFrameRef.current = requestAnimationFrame(processFrame);
     };
@@ -195,31 +240,31 @@ export default function ColorToolPage() {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
     };
-  }, [uploadedVideo, settings, showPreview]);
+  }, [uploadedVideo, settings, showPreview, isMobile]);
 
-  // State updater — memoized
   const update = useCallback(
     <K extends keyof GradeSettings>(key: K, value: GradeSettings[K]) =>
       setSettings((s) => ({ ...s, [key]: value })),
     []
   );
 
-  // Reset
+  // Mark drag start on any slider interaction
+  const onSliderPointerDown = useCallback(() => { isDragging.current = true; }, []);
+
   const reset = useCallback(() => {
     setSettings(DEFAULT_SETTINGS);
   }, []);
 
-  // Clear media
   const clearMedia = useCallback(() => {
     setUploadedImage(null);
     setUploadedVideo(null);
     setSettings(DEFAULT_SETTINGS);
     setIsPlaying(false);
     setShowControls(false);
+    lastSettingsStr.current = "";
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ""; }
   }, []);
 
-  // Upload handler
   const handleUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -252,7 +297,11 @@ export default function ColorToolPage() {
         setUploadedImage(src);
         setUploadedVideo(null);
         const img = new Image();
-        img.onload = () => { imageRef.current = img; setShowControls(true); };
+        img.onload = () => {
+          imageRef.current = img;
+          setShowControls(true);
+          lastSettingsStr.current = "";
+        };
         img.src = src;
       };
       reader.readAsDataURL(file);
@@ -260,7 +309,6 @@ export default function ColorToolPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [settings]);
 
-  // Download
   const handleDownload = useCallback(() => {
     if (!isPro) { setExportUpsellOpen(true); return; }
     const canvas = canvasRef.current;
@@ -271,7 +319,6 @@ export default function ColorToolPage() {
     link.click();
   }, [isPro]);
 
-  // Auto CC
   const handleAutoCC = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -283,7 +330,6 @@ export default function ColorToolPage() {
       canvas.height = videoRef.current.videoHeight;
       ctx.drawImage(videoRef.current, 0, 0);
     } else if (imageRef.current) {
-      // Use full-res for auto CC analysis
       canvas.width = imageRef.current.naturalWidth || imageRef.current.width;
       canvas.height = imageRef.current.naturalHeight || imageRef.current.height;
       ctx.drawImage(imageRef.current, 0, 0);
@@ -302,11 +348,7 @@ export default function ColorToolPage() {
 
   const handleKeyValidated = useCallback((tier: KeyTier) => setCurrentTier(tier), []);
   const handleKeyRemoved = useCallback(() => { setCurrentTier(null); setActiveTab("basic"); }, []);
-
-  const isTabLocked = useCallback((tab: ToolTab) => {
-    const req = TAB_TIER[tab];
-    return req !== null && !hasTierAccess(req);
-  }, []);
+  const isTabLocked = useCallback((tab: ToolTab) => (TAB_TIER[tab] ?? null) !== null && !hasTierAccess(TAB_TIER[tab]!), []);
 
   const tabs = useMemo(() => [
     { id: "basic" as ToolTab, label: "Basic", icon: SlidersHorizontal, locked: false },
@@ -315,18 +357,17 @@ export default function ColorToolPage() {
     { id: "effects" as ToolTab, label: "FX", icon: Sparkles, locked: isTabLocked("effects") },
   ], [isTabLocked]);
 
-  // ── Shared styles ──
-  const panelBg = { background: "var(--bg-primary)" };
-  const cardStyle = { background: "var(--glass-bg)", border: "1px solid var(--glass-border)", boxShadow: "var(--neo-soft)" };
+  // ── Shared props for slider components ──
+  const sliderHandlers = useMemo(() => ({
+    onPointerDown: onSliderPointerDown,
+  }), [onSliderPointerDown]);
 
-  // ── Tab content (shared between mobile & desktop) ──
+  // ── Tab content ──
   const tabContent = (
     <div className="p-4">
       <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ background: "var(--bg-deep)", boxShadow: "var(--neo-inset)" }}>
         {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => !tab.locked && setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => !tab.locked && setActiveTab(tab.id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium transition-all duration-150 ${
               activeTab === tab.id ? "text-[var(--text-primary)]" :
               tab.locked ? "text-[var(--text-ghost)] cursor-not-allowed opacity-40" :
@@ -340,12 +381,10 @@ export default function ColorToolPage() {
           </button>
         ))}
       </div>
-
-      {activeTab === "basic" && <BasicTab settings={settings} update={update} isPro={isPro} onUnlock={() => setKeyEntryOpen(true)} />}
-      {activeTab === "3way" && (isTabLocked("3way") ? <LockedPanel feature="3-Way Color Wheels" tier="pro" onUnlock={() => setKeyEntryOpen(true)} /> : <ThreeWayTab settings={settings} update={update} />)}
-      {activeTab === "hsl" && (isTabLocked("hsl") ? <LockedPanel feature="HSL Target Isolation" tier="pro" onUnlock={() => setKeyEntryOpen(true)} /> : <HSLTab settings={settings} update={update} />)}
-      {activeTab === "effects" && (isTabLocked("effects") ? <LockedPanel feature="Film Grain & Effects" tier="studio" onUnlock={() => setKeyEntryOpen(true)} /> : <EffectsTab settings={settings} update={update} />)}
-
+      {activeTab === "basic" && <BasicTab settings={settings} update={update} isPro={isPro} onUnlock={() => setKeyEntryOpen(true)} sliderHandlers={sliderHandlers} />}
+      {activeTab === "3way" && (isTabLocked("3way") ? <LockedPanel feature="3-Way Color Wheels" tier="pro" onUnlock={() => setKeyEntryOpen(true)} /> : <ThreeWayTab settings={settings} update={update} sliderHandlers={sliderHandlers} />)}
+      {activeTab === "hsl" && (isTabLocked("hsl") ? <LockedPanel feature="HSL Target Isolation" tier="pro" onUnlock={() => setKeyEntryOpen(true)} /> : <HSLTab settings={settings} update={update} sliderHandlers={sliderHandlers} />)}
+      {activeTab === "effects" && (isTabLocked("effects") ? <LockedPanel feature="Film Grain & Effects" tier="studio" onUnlock={() => setKeyEntryOpen(true)} /> : <EffectsTab settings={settings} update={update} sliderHandlers={sliderHandlers} />)}
       {!isPro && (
         <div className="mt-6 p-4 rounded-xl text-center" style={{ background: "linear-gradient(135deg, rgba(6,148,148,0.08), rgba(6,148,148,0.02))", border: "1px solid rgba(6,148,148,0.15)", boxShadow: "var(--neo-soft)" }}>
           <Crown className="w-5 h-5 text-[var(--accent-teal)] mx-auto mb-2 opacity-70" />
@@ -360,7 +399,7 @@ export default function ColorToolPage() {
   );
 
   // ══════════════════════════════════════════════════
-  // MOBILE LAYOUT: vertical stacked sections
+  // MOBILE LAYOUT
   // ══════════════════════════════════════════════════
   if (isMobile) {
     return (
@@ -368,7 +407,6 @@ export default function ColorToolPage() {
         <KeyEntry isOpen={keyEntryOpen} onClose={() => setKeyEntryOpen(false)} onKeyValidated={handleKeyValidated} />
         <ExportUpsell isOpen={exportUpsellOpen} onClose={() => setExportUpsellOpen(false)} onUnlock={() => { setExportUpsellOpen(false); setKeyEntryOpen(true); }} />
 
-        {/* Expiry Banner */}
         {currentTier && (expiryLevel === "warning" || expiryLevel === "urgent") && (
           <div className="sticky top-0 z-50 flex items-center justify-center gap-2 px-4 py-2 text-[10px] font-medium" style={{ background: expiryLevel === "urgent" ? "rgba(239,68,68,0.1)" : "rgba(6,148,148,0.08)", color: expiryLevel === "urgent" ? "#EF4444" : "#0AB5B5" }}>
             <AlertTriangle className="w-3 h-3" />
@@ -376,7 +414,6 @@ export default function ColorToolPage() {
           </div>
         )}
 
-        {/* Sticky header */}
         <header className="h-12 backdrop-blur-xl flex items-center justify-between px-3 sticky top-0 z-50" style={{ background: "rgba(24,24,24,0.85)", borderBottom: "1px solid var(--border-subtle)" }}>
           <div className="flex items-center gap-2 min-w-0">
             <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><ArrowLeft className="w-4 h-4" /></Link>
@@ -388,14 +425,12 @@ export default function ColorToolPage() {
           </div>
         </header>
 
-        {/* Canvas section — fixed height */}
         <div className="relative" style={{ height: "40vh", minHeight: 200 }}>
           <div className="absolute inset-0 flex items-center justify-center p-3" style={{ background: "#0F0F0F" }}>
             {hasMedia ? (
               <div className="relative w-full h-full rounded-xl overflow-hidden">
                 <canvas ref={canvasRef} className="w-full h-full object-contain" />
                 {uploadedVideo && <video ref={videoRef} className="hidden" src={uploadedVideo} muted loop playsInline />}
-                {/* Overlaid controls */}
                 <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
                   {uploadedVideo && (
                     <button onClick={toggleVideoPlay} className="p-2 rounded-full text-white" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)" }}>
@@ -427,7 +462,6 @@ export default function ColorToolPage() {
           </div>
         </div>
 
-        {/* AUTO CC — big prominent button (always visible when media loaded) */}
         {hasMedia && (
           <div className="px-3 py-2" style={{ background: "var(--bg-deep)", borderBottom: "1px solid var(--border-subtle)" }}>
             <button onClick={handleAutoCC} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all duration-200 active:scale-[0.98]" style={{ background: "linear-gradient(135deg, #069494, #047A7A)", color: "#EDE8D0", boxShadow: "0 4px 20px rgba(6,148,148,0.35)" }}>
@@ -437,10 +471,8 @@ export default function ColorToolPage() {
           </div>
         )}
 
-        {/* Mobile controls section — scrollable */}
         {showControls && (
           <div className="border-t" style={{ borderColor: "var(--border-subtle)", background: "var(--bg-primary)" }}>
-            {/* Quick actions bar */}
             <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
               <button onClick={() => setShowPreview(!showPreview)} className="p-1.5 rounded-lg" style={{ background: showPreview ? "rgba(6,148,148,0.1)" : "transparent" }}>
                 {showPreview ? <Eye className="w-3.5 h-3.5 text-[var(--accent-teal)]" /> : <EyeOff className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
@@ -453,7 +485,6 @@ export default function ColorToolPage() {
                 <Key className="w-3 h-3" /> {isPro ? "Pro ✓" : "Enter Key"}
               </button>
             </div>
-            {/* Tab content with its own scroll */}
             <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 40vh - 120px)" }}>
               {tabContent}
             </div>
@@ -466,7 +497,7 @@ export default function ColorToolPage() {
   }
 
   // ══════════════════════════════════════════════════
-  // DESKTOP LAYOUT: 3-column
+  // DESKTOP LAYOUT
   // ══════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[var(--bg-deep)]">
@@ -481,7 +512,6 @@ export default function ColorToolPage() {
         </div>
       )}
 
-      {/* Desktop header */}
       <header className="h-14 backdrop-blur-xl flex items-center justify-between px-4 sticky top-0 z-50" style={{ background: "rgba(24,24,24,0.85)", borderBottom: "1px solid var(--border-subtle)" }}>
         <div className="flex items-center gap-4 min-w-0">
           <Link href="/" className="flex items-center gap-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><ArrowLeft className="w-4 h-4" /><span className="text-sm">Back</span></Link>
@@ -511,12 +541,10 @@ export default function ColorToolPage() {
       </header>
 
       <div className="flex h-[calc(100vh-56px)]">
-        {/* Left sidebar */}
         <aside className="w-72 overflow-y-auto flex-shrink-0" style={{ background: "var(--bg-primary)", borderRight: "1px solid var(--border-subtle)" }}>
           {tabContent}
         </aside>
 
-        {/* Main canvas */}
         <main className="flex-1 flex flex-col min-w-0">
           <div className="h-10 flex items-center justify-between px-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
             <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
@@ -556,7 +584,6 @@ export default function ColorToolPage() {
             </div>
           </div>
 
-          {/* Histogram */}
           <div className="h-24 px-6 flex items-center gap-6" style={{ borderTop: "1px solid var(--border-subtle)" }}>
             <div className="flex-1 h-14 flex items-end gap-px opacity-60">
               {Array.from({ length: 64 }, (_, i) => {
@@ -571,7 +598,6 @@ export default function ColorToolPage() {
           </div>
         </main>
 
-        {/* Right panel */}
         <aside className="w-60 overflow-y-auto flex-shrink-0 p-4" style={{ background: "var(--bg-primary)", borderLeft: "1px solid var(--border-subtle)" }}>
           <AdjustmentsPanel settings={settings} currentTier={currentTier} onUnlock={() => setKeyEntryOpen(true)} />
         </aside>
@@ -580,9 +606,31 @@ export default function ColorToolPage() {
   );
 }
 
+// ── Slider helper: thin wrapper that fires onPointerDown ──
+function PSlider({ value, min, max, step, onChange, sliderHandlers, disabled, className }: {
+  value: number; min: number; max: number; step?: number;
+  onChange: (v: number) => void;
+  sliderHandlers: { onPointerDown: () => void };
+  disabled?: boolean; className?: string;
+}) {
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      onPointerDown={sliderHandlers.onPointerDown}
+      disabled={disabled}
+      className={className ?? "w-full touch-manipulation"}
+    />
+  );
+}
+
 // ── Tab Panels ────────────────────────────────────
 
-function BasicTab({ settings, update, isPro, onUnlock }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void; isPro: boolean; onUnlock: () => void }) {
+function BasicTab({ settings, update, isPro, onUnlock, sliderHandlers }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void; isPro: boolean; onUnlock: () => void; sliderHandlers: { onPointerDown: () => void } }) {
   const sliders = [
     { key: "whiteBalance" as const, label: "White Balance", icon: SunMedium, locked: false },
     { key: "exposure" as const, label: "Exposure", icon: SunMedium, locked: !isPro },
@@ -621,7 +669,7 @@ function BasicTab({ settings, update, isPro, onUnlock }: { settings: GradeSettin
             </div>
             <span className="text-xs text-[var(--text-ghost)] font-mono">{settings[s.key] > 0 ? "+" : ""}{settings[s.key]}</span>
           </div>
-          <input type="range" min={-100} max={100} value={settings[s.key]} onChange={(e) => update(s.key, Number(e.target.value))} disabled={s.locked} className="w-full touch-manipulation" />
+          <PSlider min={-100} max={100} value={settings[s.key]} onChange={(v) => update(s.key, v)} sliderHandlers={sliderHandlers} disabled={s.locked} />
           {s.locked && <button onClick={onUnlock} className="absolute inset-0 flex items-center justify-center cursor-pointer z-10 rounded-xl" style={{ background: "rgba(24,24,24,0.4)" }}><span className="text-[9px] font-semibold px-2 py-0.5 rounded-md" style={{ background: "rgba(6,148,148,0.2)", color: "var(--accent-teal-light)", border: "1px solid rgba(6,148,148,0.25)" }}>🔒 Pro</span></button>}
         </div>
       ))}
@@ -629,7 +677,7 @@ function BasicTab({ settings, update, isPro, onUnlock }: { settings: GradeSettin
   );
 }
 
-function ThreeWayTab({ settings, update }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void }) {
+function ThreeWayTab({ settings, update, sliderHandlers }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void; sliderHandlers: { onPointerDown: () => void } }) {
   const wheels = [
     { label: "Shadows", hueKey: "shadowsHue" as const, satKey: "shadowsSat" as const, color: "var(--accent-slate)" },
     { label: "Midtones", hueKey: "midtonesHue" as const, satKey: "midtonesSat" as const, color: "var(--accent-teal)" },
@@ -648,9 +696,9 @@ function ThreeWayTab({ settings, update }: { settings: GradeSettings; update: <K
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between"><span className="text-xs text-[var(--text-muted)]">Hue</span><span className="text-xs text-[var(--text-ghost)] font-mono">{settings[w.hueKey]}°</span></div>
-              <input type="range" min={-180} max={180} value={settings[w.hueKey]} onChange={(e) => update(w.hueKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              <PSlider min={-180} max={180} value={settings[w.hueKey]} onChange={(v) => update(w.hueKey, v)} sliderHandlers={sliderHandlers} />
               <div className="flex items-center justify-between"><span className="text-xs text-[var(--text-muted)]">Saturation</span><span className="text-xs text-[var(--text-ghost)] font-mono">{settings[w.satKey]}%</span></div>
-              <input type="range" min={0} max={200} value={settings[w.satKey]} onChange={(e) => update(w.satKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              <PSlider min={0} max={200} value={settings[w.satKey]} onChange={(v) => update(w.satKey, v)} sliderHandlers={sliderHandlers} />
             </div>
           </div>
         </div>
@@ -659,7 +707,7 @@ function ThreeWayTab({ settings, update }: { settings: GradeSettings; update: <K
   );
 }
 
-function HSLTab({ settings, update }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void }) {
+function HSLTab({ settings, update, sliderHandlers }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void; sliderHandlers: { onPointerDown: () => void } }) {
   return (
     <div className="space-y-4">
       <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3 block">HSL Target Isolation</label>
@@ -684,11 +732,11 @@ function HSLTab({ settings, update }: { settings: GradeSettings; update: <K exte
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between"><span className="text-[10px] text-[var(--text-muted)]">Hue</span><span className="text-[10px] text-[var(--text-ghost)] font-mono">{hueVal > 0 ? "+" : ""}{hueVal}°</span></div>
-              <input type="range" min={-180} max={180} value={hueVal} onChange={(e) => update(hueKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              <PSlider min={-180} max={180} value={hueVal} onChange={(v) => update(hueKey, v)} sliderHandlers={sliderHandlers} />
               <div className="flex items-center justify-between"><span className="text-[10px] text-[var(--text-muted)]">Saturation</span><span className="text-[10px] text-[var(--text-ghost)] font-mono">{satVal}%</span></div>
-              <input type="range" min={0} max={200} value={satVal} onChange={(e) => update(satKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              <PSlider min={0} max={200} value={satVal} onChange={(v) => update(satKey, v)} sliderHandlers={sliderHandlers} />
               <div className="flex items-center justify-between"><span className="text-[10px] text-[var(--text-muted)]">Luminance</span><span className="text-[10px] text-[var(--text-ghost)] font-mono">{lumVal}%</span></div>
-              <input type="range" min={0} max={200} value={lumVal} onChange={(e) => update(lumKey, Number(e.target.value))} className="w-full touch-manipulation" />
+              <PSlider min={0} max={200} value={lumVal} onChange={(v) => update(lumKey, v)} sliderHandlers={sliderHandlers} />
             </div>
           </div>
         );
@@ -697,7 +745,7 @@ function HSLTab({ settings, update }: { settings: GradeSettings; update: <K exte
   );
 }
 
-function EffectsTab({ settings, update }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void }) {
+function EffectsTab({ settings, update, sliderHandlers }: { settings: GradeSettings; update: <K extends keyof GradeSettings>(k: K, v: GradeSettings[K]) => void; sliderHandlers: { onPointerDown: () => void } }) {
   return (
     <div className="space-y-5">
       {[
@@ -712,7 +760,7 @@ function EffectsTab({ settings, update }: { settings: GradeSettings; update: <K 
             <div className="flex items-center gap-2"><s.icon className="w-3.5 h-3.5 text-[var(--text-muted)]" /><span className="text-xs text-[var(--text-secondary)]">{s.label}</span></div>
             <span className="text-xs text-[var(--text-ghost)] font-mono">{settings[s.key]}%</span>
           </div>
-          <input type="range" min={0} max={100} value={settings[s.key]} onChange={(e) => update(s.key, Number(e.target.value))} className="w-full touch-manipulation" />
+          <PSlider min={0} max={100} value={settings[s.key]} onChange={(v) => update(s.key, v)} sliderHandlers={sliderHandlers} />
         </div>
       ))}
     </div>
