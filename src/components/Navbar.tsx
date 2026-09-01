@@ -2,13 +2,16 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { getCurrentTier } from "@/lib/keys";
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [hasKey, setHasKey] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    setHasKey(getCurrentTier() !== null);
   }, []);
 
   useEffect(() => {
@@ -57,7 +60,7 @@ export default function Navbar() {
             Sign In
           </a>
           <Link href="/tool" className="iridescent-btn px-6 py-2 rounded-full font-medium scale-95 active:scale-90 transition-transform" style={{ fontFamily: "'Inter', sans-serif" }}>
-            Launch Editor
+            {hasKey ? "Open Editor" : "Launch Editor"}
           </Link>
         </div>
       </nav>
@@ -85,7 +88,7 @@ export default function Navbar() {
               </a>
             ))}
             <Link href="/tool" onClick={closeMobile} className={`iridescent-btn px-10 py-4 rounded-full font-bold text-sm transition-all duration-300 ${mounted && mobileOpen ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"}`} style={{ transitionDelay: mounted && mobileOpen ? "280ms" : "0ms" }}>
-              Launch Editor
+              {hasKey ? "Open Editor" : "Launch Editor"}
             </Link>
           </nav>
         </div>
