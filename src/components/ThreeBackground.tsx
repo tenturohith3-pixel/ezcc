@@ -108,6 +108,17 @@ export default function ThreeBackground() {
   }, []);
 
   return (
-    <div ref={containerRef} className="fixed inset-0 z-[-1] pointer-events-none" />
+    <div
+      ref={containerRef}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        zIndex: -1,
+        pointerEvents: "none",
+      }}
+    />
   );
 }
