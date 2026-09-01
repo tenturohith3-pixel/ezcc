@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const normalizedKey = keyCode.trim().toUpperCase();
+    const normalizedKey = keyCode.trim();
 
     // Check that TOKEN_SECRET is configured
     const tokenSecret = process.env.TOKEN_SECRET;

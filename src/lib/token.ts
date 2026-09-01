@@ -177,8 +177,8 @@ export function generateKey(tier: KeyTier, secret: string): string {
  */
 export function decodeKey(key: string, secret: string): DecodedToken | null {
   try {
-    // Strip the "CG-" prefix
-    const encoded = key.trim().toUpperCase().replace(/^CG-/, "");
+    // Strip the "CG-" prefix (preserve case — base64url is case-sensitive)
+    const encoded = key.trim().replace(/^CG-/i, "");
     if (encoded.length < 10) return null;
 
     const buf = fromBase64url(encoded);

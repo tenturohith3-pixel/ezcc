@@ -157,7 +157,7 @@ export async function validateKey(keyCode: string): Promise<ValidateKeyResult> {
     const res = await fetch("/api/validate-key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyCode: keyCode.trim().toUpperCase() }),
+      body: JSON.stringify({ keyCode: keyCode.trim() }),
     });
 
     const data = await res.json();
