@@ -137,7 +137,7 @@ let allOk = true;
 let kernelLive = false;
 
 try {
-  const wasmPath = fileURLToPath(new URL("../public/wasm/engine.kernel.v1.wasm", import.meta.url));
+  const wasmPath = fileURLToPath(new URL("../public/wasm/engine.kernel.v2.wasm", import.meta.url));
   const wasmBytes = readFileSync(wasmPath);
   kernelLive = await loadKernelNow(
     wasmBytes.buffer.slice(
@@ -149,7 +149,7 @@ try {
   kernelLive = false;
 }
 if (!kernelLive) {
-  console.error("✗ kernel failed to boot — check public/wasm/engine.kernel.v1.wasm");
+  console.error("✗ kernel failed to boot — check public/wasm/engine.kernel.v2.wasm");
   process.exit(1);
 }
 

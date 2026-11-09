@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Instrument_Serif, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/site/Nav";
 import { Footer } from "@/components/site/Footer";
 import { SmoothScroll } from "@/components/site/SmoothScroll";
 import { ScrollProgress } from "@/components/site/ScrollProgress";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -12,9 +13,11 @@ const inter = Inter({
   display: "swap",
 });
 
-const grotesk = Space_Grotesk({
+const serif = Instrument_Serif({
   subsets: ["latin"],
-  variable: "--font-grotesk",
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-serif",
   display: "swap",
 });
 
@@ -35,16 +38,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#08090b",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0908" },
+    { media: "(prefers-color-scheme: light)", color: "#f3eee4" },
+  ],
+  colorScheme: "dark light",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${grotesk.variable} ${mono.variable}`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${serif.variable} ${mono.variable}`}
+    >
       <body className="bg-bg text-ink min-h-screen antialiased">
+        {/* appearance boots before first paint — never flash the wrong room */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         <SmoothScroll>
           <ScrollProgress />
           <Nav />

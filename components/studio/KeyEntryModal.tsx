@@ -13,7 +13,7 @@ export function KeyEntryModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[70] grid place-items-center px-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 scrim backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md rounded-2xl border border-line bg-bg-raised shadow-2xl overflow-hidden">
         <header className="px-6 py-5 border-b border-line flex items-center justify-between">
           <div>
@@ -33,7 +33,7 @@ export function KeyEntryModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setInput(e.target.value)}
               placeholder="ECXXX-XXXX-XXXX-XXXX-XXX"
               spellCheck={false}
-              className="flex-1 rounded-lg bg-black/30 border border-line px-4 py-3 text-sm font-mono tracking-wider placeholder:text-ink-faint focus:border-bronze/50 outline-none"
+              className="flex-1 rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm font-mono tracking-wider placeholder:text-ink-faint focus:border-bronze/50 outline-none"
             />
           </div>
 

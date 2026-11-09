@@ -28,6 +28,8 @@
 
 use std::alloc::{alloc, dealloc, Layout};
 
+mod upscale;
+
 const PARAM_COUNT: usize = 43;
 
 /* ── index constants for the flat params array (see lib/grade/kernel.ts) ── */

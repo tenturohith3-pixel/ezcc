@@ -33,7 +33,7 @@ export function Ticker() {
       const track = sectionRef.current?.querySelector<HTMLElement>(".ticker-track");
       if (!track) return;
 
-      const flow = gsap.to(track, { xPercent: -50, ease: "none", duration: 30, repeat: -1 });
+      const flow = gsap.to(track, { xPercent: -50, ease: "none", duration: 42, repeat: -1 });
       flow.timeScale(1);
 
       let settle: gsap.core.Tween | null = null;
@@ -52,25 +52,35 @@ export function Ticker() {
   );
 
   return (
-    <section ref={sectionRef} aria-hidden className="relative py-14 md:py-20 overflow-hidden select-none">
-      <div className="w-full overflow-hidden [mask-image:linear-gradient(90deg,transparent,black_12%,black_88%,transparent)]">
-        <div className="ticker-track flex items-center gap-10 md:gap-16 w-max will-change-transform">
+    <section
+      ref={sectionRef}
+      id="story"
+      aria-hidden
+      className="relative select-none overflow-hidden border-y border-line bg-bg-raised/40"
+    >
+      {/* film strip perforations */}
+      <div className="perf-strip" />
+      <div className="w-full overflow-hidden [mask-image:linear-gradient(90deg,transparent,black_10%,black_90%,transparent)]">
+        <div className="ticker-track flex w-max items-center gap-8 py-7 md:gap-12 md:py-9 will-change-transform">
           {[0, 1].map((half) => (
-            <div key={half} className="flex items-center gap-10 md:gap-16 shrink-0">
+            <div key={half} className="flex shrink-0 items-center gap-8 md:gap-12">
               {ITEMS.map((item) => (
-                <span
-                  key={`${half}-${item.label}`}
-                  className={`display leading-none text-[12vw] md:text-[7rem] whitespace-nowrap ${
-                    item.solid ? "gradient-text" : "display ticker-outline"
-                  }`}
-                >
-                  {item.label}
+                <span key={`${half}-${item.label}`} className="flex items-center gap-8 md:gap-12">
+                  <span
+                    className={`display whitespace-nowrap leading-none text-[9vw] md:text-[4.6rem] ${
+                      item.solid ? "italic text-ink" : "ticker-outline"
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                  <span className="size-1.5 rotate-45 bg-bronze/45" />
                 </span>
               ))}
             </div>
           ))}
         </div>
       </div>
+      <div className="perf-strip" />
     </section>
   );
 }

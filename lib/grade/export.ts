@@ -1,10 +1,21 @@
 /**
  * EffectCraft Studio — deterministic still exporter.
- * Re-runs the exact preview pipeline at full resolution, then encodes.
+ * Re-runs the exact preview pipeline at full resolution, then optionally
+ * hands the graded frame to the Detail Engine (Rust/WASM upscaler) before
+ * encoding. One canvas in, one file out — no uploads at any stage.
  */
 
 import { createStage, paintSource, renderGrade } from "./stage";
 import type { GradeParams } from "./params";
+import { upscaleCanvas } from "./upscale";
+
+export interface ExportUpscale {
+  factor: 2 | 4;
+  detail: number; // 0..100 micro-contrast
+  denoise: number; // 0..100 pre-blur
+  /** Plan ceiling for the enlarged frame (independent of base render size). */
+  maxLongEdge: number;
+}
 
 export interface ExportRequest {
   img: HTMLImageElement | HTMLCanvasElement;
@@ -14,13 +25,26 @@ export interface ExportRequest {
   quality: number;
   maxLongEdge: number;
   filenameBase?: string;
+  /** Detail Engine stage — omit or null for a straight export. */
+  upscale?: ExportUpscale | null;
+  /** Upscale progress, 0..1. */
+  onProgress?: (pct: number) => void;
+}
+
+export interface ExportResult {
+  blob: Blob;
+  filename: string;
+  w: number;
+  h: number;
+  /** True when the Detail Engine actually resampled the frame. */
+  upscaled: boolean;
 }
 
 const wait = (ms = 40) => new Promise<void>((r) => setTimeout(r, ms));
 
 export async function renderExportBlob(
   req: ExportRequest,
-): Promise<{ blob: Blob; filename: string }> {
+): Promise<ExportResult> {
   const { img, params, cube, format, quality, maxLongEdge } = req;
   const srcW =
     "naturalWidth" in img ? img.naturalWidth || img.width : img.width;
@@ -38,8 +62,31 @@ export async function renderExportBlob(
   await wait(60);
   renderGrade(stage, params, { cube: cube ?? null });
   await wait(30);
+
+  /* ── Detail Engine ──────────────────────────────────────────────
+     The graded frame is the source of truth. Upscaling happens after
+     the grade so micro-contrast is applied to final pixels, exactly
+     like a print enlargement. */
+  let output: HTMLCanvasElement = stage.graded;
+  let outW = tw;
+  let outH = th;
+  let upscaled = false;
+  if (req.upscale) {
+    const up = await upscaleCanvas(stage.graded, {
+      factor: req.upscale.factor,
+      detail: req.upscale.detail,
+      denoise: req.upscale.denoise,
+      maxLongEdge: req.upscale.maxLongEdge,
+      onProgress: req.onProgress,
+    });
+    output = up.canvas;
+    outW = up.w;
+    outH = up.h;
+    upscaled = up.scale > 1.01;
+  }
+
   const blob = await new Promise<Blob | null>((resolve) =>
-    stage.graded.toBlob(
+    output.toBlob(
       (b) => resolve(b),
       format === "png" ? "image/png" : "image/jpeg",
       format === "png" ? undefined : quality,
@@ -49,7 +96,13 @@ export async function renderExportBlob(
   const base = req.filenameBase ?? "effectcraft-grade";
   const ext = format === "png" ? "png" : "jpg";
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  return { blob, filename: `${base}-${tw}x${th}-${stamp}.${ext}` };
+  return {
+    blob,
+    filename: `${base}-${outW}x${outH}-${stamp}.${ext}`,
+    w: outW,
+    h: outH,
+    upscaled,
+  };
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

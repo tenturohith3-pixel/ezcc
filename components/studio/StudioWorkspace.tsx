@@ -41,6 +41,9 @@ import {
   downloadBlob,
 } from "@/lib/grade/export";
 import { useLicense } from "@/hooks/useLicense";
+import { ThemeToggle } from "@/components/site/ThemeToggle";
+import { canUpscale, recordUpscale } from "@/lib/upscale/quota";
+import type { ExportOutcome, ExportPayload } from "./ExportPanel";
 import {
   loadSettings,
   saveSettings,
@@ -327,10 +330,15 @@ export function StudioWorkspace() {
   );
 
   const runExport = useCallback(
-    async (t: { format: "png" | "jpeg"; quality: number; maxLongEdge: number }) => {
+    async (t: ExportPayload): Promise<ExportOutcome> => {
       const src = sourceRef.current;
       if (!src?.img) throw new Error("Open an image before exporting.");
-      const { blob, filename } = await renderExportBlob({
+      if (t.upscale && !canUpscale(tier)) {
+        throw new Error(
+          "Free level-ups used for this 24h window — a paid key makes them unlimited.",
+        );
+      }
+      const result = await renderExportBlob({
         img: src.img,
         params: paramsRef.current,
         cube: cubeRef.current,
@@ -338,8 +346,12 @@ export function StudioWorkspace() {
         quality: t.quality,
         maxLongEdge: Math.min(t.maxLongEdge, TIER_MAX_EXPORT[tier] ?? 1920),
         filenameBase: "effectcraft",
+        upscale: t.upscale,
+        onProgress: t.onProgress,
       });
-      downloadBlob(blob, filename);
+      downloadBlob(result.blob, result.filename);
+      if (t.upscale && result.upscaled) recordUpscale();
+      return { w: result.w, h: result.h, upscaled: result.upscaled };
     },
     [tier],
   );
@@ -412,6 +424,19 @@ export function StudioWorkspace() {
   /* ── Settings (shared by mobile sheet & desktop modal) ── */
   const settingsContent = (
     <div className="space-y-4">
+      <div>
+        <p className="mono-label !text-[9px] mb-2.5">APPEARANCE</p>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5">
+          <div>
+            <p className="text-[12px]">Light · Standard · Dark</p>
+            <p className="mono-label !text-[8px] mt-1 !text-ink-faint">
+              THE LIGHT TABLE ↔ THE DARKROOM
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
+      </div>
+
       <div>
         <p className="mono-label !text-[9px] mb-2.5">PREVIEW QUALITY</p>
         <div className="grid grid-cols-3 gap-2">
@@ -593,6 +618,7 @@ export function StudioWorkspace() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ThemeToggle compact className="hidden sm:inline-flex" />
           <button
             onClick={() => setKeyOpen(true)}
             className={cn(
@@ -892,7 +918,7 @@ export function StudioWorkspace() {
       {/* ── Desktop settings modal ── */}
       {settingsOpen ? (
         <div className="fixed inset-0 z-[70] grid place-items-center px-4" role="dialog">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSettingsOpen(false)} />
+          <div className="absolute inset-0 scrim backdrop-blur-sm" onClick={() => setSettingsOpen(false)} />
           <div className="relative w-full max-w-md rounded-2xl border border-line bg-bg-raised shadow-2xl overflow-hidden">
             <header className="px-6 py-4 border-b border-line flex items-center justify-between">
               <div>

@@ -1,8 +1,8 @@
 {
   "name": "effectcraft-platform",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "EffectCraft — cinematic post-production platform. Studio grading engine + Prism plugin ecosystem.",
+  "description": "EffectCraft \u2014 cinematic post-production platform. Studio grading engine + Prism plugin ecosystem.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "verify-kernel": "bun run scripts/verify-kernel.ts",
+    "verify-upscale": "bun run scripts/verify-upscale.ts",
     "mint": "bun run scripts/mint-key.ts",
     "catalog:sync": "bun run scripts/sync-catalog.ts"
   },

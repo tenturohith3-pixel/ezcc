@@ -46,7 +46,7 @@ export function CatalogExplorer({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search 65 modules — glow, twixtor, key…"
-            className="w-full rounded-xl border border-line bg-white/[0.03] pl-10 pr-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
+            className="w-full rounded-xl border border-line bg-tint-soft pl-10 pr-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
           />
         </div>
         <p className="mono-label !text-[10px] shrink-0">

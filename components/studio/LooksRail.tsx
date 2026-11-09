@@ -42,7 +42,7 @@ export function LooksRail({
                   "w-full text-left px-3.5 py-2.5 rounded-lg border transition-all duration-150 group",
                   active
                     ? "border-bronze/50 bg-bronze/10"
-                    : "border-transparent hover:bg-white/[0.03] hover:border-line",
+                    : "border-transparent hover:bg-tint-soft hover:border-line",
                   locked && "opacity-45",
                 )}
               >

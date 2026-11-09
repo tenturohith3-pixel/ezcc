@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Clapperboard, Menu, X } from "lucide-react";
+import { ArrowUpRight, Menu, X } from "lucide-react";
 import { useLicense } from "@/hooks/useLicense";
 import { TIER_LABEL } from "@/lib/license";
+import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { cn } from "@/lib/cn";
 
 const LINKS = [
@@ -35,80 +36,114 @@ export function Nav() {
   if (pathname === "/studio" || pathname.startsWith("/admin")) return null;
 
   return (
-    <header
-      className={cn(
-        "fixed top-0 inset-x-0 z-50 transition-all duration-300",
-        scrolled || open
-          ? "bg-bg/80 backdrop-blur-xl border-b border-line"
-          : "bg-transparent border-b border-transparent",
-      )}
-    >
-      <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <span className="grid place-items-center size-8 rounded-lg border border-line bg-white/[0.04] group-hover:border-bronze/40 transition-colors">
-            <Clapperboard className="size-4 text-bronze-bright" strokeWidth={1.75} />
-          </span>
-          <span className="display text-[15px] tracking-[0.14em] uppercase">
-            EffectCraft
-          </span>
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-1">
-          {LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={cn(
-                "px-3.5 py-2 text-[13px] rounded-md transition-colors",
-                pathname === l.href || pathname.startsWith(`${l.href}/`)
-                  ? "text-ink"
-                  : "text-ink-muted hover:text-ink",
-              )}
-            >
-              {l.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="hidden md:flex items-center gap-3">
-          {hydrated && license ? (
-            <span className="pill-badge !py-1.5 !px-3 border-bronze/40 text-bronze-bright">
-              <span className="size-1.5 rounded-full bg-bronze-bright inline-block" />
-              {TIER_LABEL[license.tier]}
+    <>
+      <header
+        className={cn(
+          "fixed top-0 inset-x-0 z-50 theme-smooth",
+          scrolled || open
+            ? "bg-bg/85 backdrop-blur-xl border-b border-line"
+            : "bg-transparent border-b border-transparent",
+        )}
+      >
+        <div className="mx-auto max-w-[88rem] px-6 md:px-10 h-[4.5rem] flex items-center justify-between gap-6">
+          <Link href="/" className="group flex items-baseline gap-2.5 min-w-0">
+            <span className="display text-[1.55rem] leading-none tracking-[0.01em]">
+              EffectCraft
             </span>
-          ) : null}
-          <Link href="/studio" className="btn-primary !py-2 !px-4 text-[13px]">
-            Launch Studio
+            <span className="size-1.5 rounded-full bg-bronze translate-y-[-2px] group-hover:bg-bronze-bright transition-colors" />
+            <span className="hidden lg:block mono-label !text-[8px] !tracking-[0.34em] !text-ink-faint translate-y-[-1px]">
+              Color Lab
+            </span>
           </Link>
+
+          <nav className="hidden md:flex items-center gap-7 absolute left-1/2 -translate-x-1/2">
+            {LINKS.map((l, i) => {
+              const active =
+                pathname === l.href || pathname.startsWith(`${l.href}/`);
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={cn(
+                    "group relative text-[13px] tracking-[0.01em] transition-colors py-2",
+                    active ? "text-ink" : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  <span className="mono-num text-[8px] text-ink-faint/70 mr-1.5 align-[2px]">
+                    0{i + 1}
+                  </span>
+                  {l.label}
+                  <span
+                    className={cn(
+                      "absolute inset-x-0 -bottom-0.5 h-px bg-bronze/70 origin-left transition-transform duration-500",
+                      active ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100",
+                    )}
+                  />
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="hidden md:flex items-center gap-4">
+            {hydrated && license ? (
+              <span className="mono-label !text-[8px] text-bronze-bright">
+                {TIER_LABEL[license.tier]}
+              </span>
+            ) : null}
+            <ThemeToggle compact />
+            <span className="h-4 w-px bg-line" aria-hidden />
+            <Link
+              href="/studio"
+              className="group inline-flex items-center gap-1.5 text-[13px] text-ink hover:text-bronze-bright transition-colors"
+            >
+              Open Studio
+              <ArrowUpRight className="size-3.5 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
+          </div>
+
+          <button
+            className="md:hidden p-2 -mr-2 text-ink-muted hover:text-ink"
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Toggle menu"
+          >
+            {open ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
         </div>
+      </header>
 
-        <button
-          className="md:hidden p-2 text-ink-muted hover:text-ink"
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Toggle menu"
-        >
-          {open ? <X className="size-5" /> : <Menu className="size-5" />}
-        </button>
-      </div>
-
+      {/* mobile — a quiet full-screen card */}
       {open ? (
-        <div className="md:hidden border-t border-line bg-bg/95 backdrop-blur-xl">
-          <div className="px-6 py-4 flex flex-col gap-1">
-            {LINKS.map((l) => (
+        <div className="md:hidden fixed inset-0 z-40 bg-bg pt-24 px-8 flex flex-col">
+          <nav className="flex flex-col">
+            {LINKS.map((l, i) => (
               <Link
                 key={l.href}
                 href={l.href}
-                className="py-2.5 text-sm text-ink-muted hover:text-ink border-b border-line/50"
+                className="group flex items-baseline justify-between py-5 border-b border-line"
               >
-                {l.label}
+                <span className="flex items-baseline gap-4">
+                  <span className="mono-num text-[9px] text-ink-faint">
+                    0{i + 1}
+                  </span>
+                  <span className="display text-3xl text-ink group-hover:text-bronze-bright transition-colors">
+                    {l.label}
+                  </span>
+                </span>
+                <ArrowUpRight className="size-4 text-ink-faint" />
               </Link>
             ))}
-            <Link href="/studio" className="btn-primary mt-3 justify-center">
-              Launch Studio
-            </Link>
+          </nav>
+          <div className="mt-auto pb-10 flex items-center justify-between">
+            <div>
+              <p className="mono-label !text-[8px] mb-2">APPEARANCE</p>
+              <ThemeToggle />
+            </div>
+            {hydrated && license ? (
+              <span className="pill-badge !py-1.5">{TIER_LABEL[license.tier]}</span>
+            ) : null}
           </div>
         </div>
       ) : null}
-    </header>
+    </>
   );
 }

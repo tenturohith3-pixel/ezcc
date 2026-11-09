@@ -29,7 +29,7 @@ const TIERS: {
       "All 6 free film looks",
       "Exposure, contrast, saturation, WB",
       "Vignette & texture suite",
-      "1080p export (PNG / JPEG)",
+      "1080p export · 3 level-ups / 24h",
     ],
     cta: { label: "Open Studio", href: "/studio" },
     featured: false,
@@ -44,7 +44,7 @@ const TIERS: {
       "3-way color wheels",
       "8-channel HSL isolation",
       ".cube 3D LUT import",
-      "4K export (3840px)",
+      "4K export · unlimited level-ups",
     ],
     cta: {
       label: "Get Pro — $9",

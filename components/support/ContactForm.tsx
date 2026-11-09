@@ -45,7 +45,7 @@ export function ContactForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
-            className="w-full rounded-lg bg-black/30 border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
+            className="w-full rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
           />
         </label>
         <label className="block">
@@ -55,7 +55,7 @@ export function ContactForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@studio.film"
-            className="w-full rounded-lg bg-black/30 border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
+            className="w-full rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
           />
         </label>
       </div>
@@ -66,7 +66,7 @@ export function ContactForm() {
           onChange={(e) => setMessage(e.target.value)}
           rows={5}
           placeholder="What are you grading, how many frames, when does it ship?"
-          className="w-full rounded-lg bg-black/30 border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint resize-none"
+          className="w-full rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint resize-none"
         />
       </label>
 

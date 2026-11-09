@@ -36,7 +36,7 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-[1.6fr_1fr_1fr_1fr] gap-12">
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="grid place-items-center size-8 rounded-lg border border-line bg-white/[0.04]">
+              <span className="grid place-items-center size-8 rounded-lg border border-line bg-tint">
                 <Clapperboard className="size-4 text-bronze-bright" strokeWidth={1.75} />
               </span>
               <span className="display text-[15px] tracking-[0.14em] uppercase">

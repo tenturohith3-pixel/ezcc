@@ -21,11 +21,11 @@
  */
 import { HSL_BANDS, type GradeParams } from "./params";
 
-export const KERNEL_URL = "/wasm/engine.kernel.v1.wasm";
+export const KERNEL_URL = "/wasm/engine.kernel.v2.wasm";
 const PARAM_COUNT = 43;
 const PARAMS_BYTES = PARAM_COUNT * 8;
 
-interface KernelExports {
+export interface EcKernel {
   memory: WebAssembly.Memory;
   ec_alloc: (bytes: number) => number;
   ec_dealloc: (ptr: number, bytes: number) => void;
@@ -37,7 +37,19 @@ interface KernelExports {
     params: number,
     seed: number,
   ) => number;
+  ec_up_begin: (
+    srcPtr: number,
+    srcW: number,
+    srcH: number,
+    dstW: number,
+    dstH: number,
+    detail: number,
+    denoise: number,
+  ) => number;
+  ec_up_band: (dstPtr: number, y0: number, bandH: number) => number;
+  ec_up_end: () => number;
 }
+type KernelExports = EcKernel;
 
 let kernel: KernelExports | null = null;
 let booting: Promise<KernelExports | null> | null = null;
@@ -143,6 +155,9 @@ async function boot(webBytes?: ArrayBuffer): Promise<KernelExports | null> {
       typeof x.ec_alloc !== "function" ||
       typeof x.ec_dealloc !== "function" ||
       typeof x.ec_grade !== "function" ||
+      typeof x.ec_up_begin !== "function" ||
+      typeof x.ec_up_band !== "function" ||
+      typeof x.ec_up_end !== "function" ||
       !x.memory
     ) {
       throw new Error("kernel exports missing");
@@ -172,6 +187,12 @@ export function loadKernelNow(webBytes?: ArrayBuffer): Promise<boolean> {
 export function preloadKernel(): Promise<boolean> {
   if (kernel) return Promise.resolve(true);
   return loadKernelNow();
+}
+
+/** Await the kernel (booting from HTTP if necessary); null on failure. */
+export async function ensureKernel(): Promise<EcKernel | null> {
+  const ok = await preloadKernel();
+  return ok ? kernel : null;
 }
 
 /* ── the one entry point the stage uses ── */
