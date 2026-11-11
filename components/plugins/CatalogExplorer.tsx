@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Search, ArrowRight, Cpu } from "lucide-react";
+import { Search, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 export interface CatalogEntry {
@@ -39,32 +39,33 @@ export function CatalogExplorer({
   return (
     <div>
       {/* Controls */}
-      <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mb-8">
-        <div className="relative max-w-md w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-ink-faint" />
+      <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="relative w-full max-w-md">
+          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-faint" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search 65 modules — glow, twixtor, key…"
-            className="w-full rounded-xl border border-line bg-tint-soft pl-10 pr-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
+            className="w-full rounded-full border border-line bg-bg-raised/60 py-2.5 pl-11 pr-4 text-sm outline-none backdrop-blur-sm transition-colors placeholder:text-ink-faint focus:border-bronze/50"
           />
         </div>
-        <p className="mono-label !text-[10px] shrink-0">
-          {filtered.length} / {plugins.length} MODULES
+        <p className="hud-label shrink-0">
+          <span className="text-ink">{filtered.length}</span> / {plugins.length}{" "}
+          modules
         </p>
       </div>
 
       {/* Category chips */}
-      <div className="flex flex-wrap gap-2 mb-10">
+      <div className="mb-10 flex flex-wrap gap-1.5">
         {["All", ...categories].map((c) => (
           <button
             key={c}
             onClick={() => setCat(c)}
             className={cn(
-              "px-4 py-2 rounded-lg text-[12px] border transition-all duration-200",
+              "rounded-full px-3.5 py-1.5 text-[11px] transition-all duration-200",
               cat === c
-                ? "border-bronze/50 bg-bronze/10 text-bronze-bright"
-                : "border-line text-ink-muted hover:text-ink hover:border-line-strong",
+                ? "bg-bronze font-semibold text-[color:var(--btn-ink)]"
+                : "text-ink-muted hover:bg-tint hover:text-ink",
             )}
           >
             {c}
@@ -73,44 +74,50 @@ export function CatalogExplorer({
       </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtered.map((p) => (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {filtered.map((p, i) => (
           <Link
             key={p.id}
             href={`/plugins/${p.id}`}
-            className="glass card-hover block overflow-hidden group"
+            className="group relative block overflow-hidden rounded-2xl border border-line bg-bg-raised transition-colors duration-300 hover:border-bronze/40"
           >
-            <div className="relative aspect-[16/10] overflow-hidden bg-black/40">
+            <div className="relative aspect-[2.6/1] overflow-hidden bg-bg">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={p.imagePath}
+                src={p.imagePath.replace(/_p3(\.[a-z]+)$/i, "_card$1")}
                 alt={p.name}
                 loading="lazy"
-                className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-[1.04] transition-all duration-500"
+                className="absolute inset-0 h-full w-full object-cover object-center opacity-85 transition-all duration-700 group-hover:scale-[1.04] group-hover:opacity-100"
               />
-              <span className="absolute left-3 bottom-3 mono-label !text-[9px] !bg-black/60 !px-2.5 !py-1 rounded-md border border-white/10 !tracking-[0.2em]">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
+              <span className="chip absolute bottom-3 left-3 !border-white/15 !bg-black/45 !text-[8px] !text-white/75">
                 {p.category}
               </span>
-            </div>
-            <div className="p-5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="display text-base">{p.name}</p>
-                <Cpu className="size-3.5 text-ink-faint group-hover:text-bronze-bright transition-colors" />
-              </div>
-              <p className="mt-1.5 mono-num text-[10px] text-ink-faint truncate">
-                {p.id}.wasm
-              </p>
-              <span className="mt-3 inline-flex items-center gap-1 text-[11px] text-bronze-bright/90 opacity-0 group-hover:opacity-100 transition-opacity">
-                Details <ArrowRight className="size-3" />
+              <span className="mono-num absolute right-3 top-3 text-[9px] text-white/50">
+                {String(i + 1).padStart(2, "0")}
               </span>
             </div>
+            <div className="flex items-end justify-between gap-2 border-t border-line p-4">
+              <div className="min-w-0">
+                <p className="display truncate text-[15px] font-bold uppercase leading-none tracking-[-0.02em]">
+                  {p.name}
+                </p>
+                <p className="mono-num mt-2 truncate text-[9px] text-ink-faint">
+                  {p.id}.wasm
+                </p>
+              </div>
+              <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line-strong text-ink-muted transition-colors duration-300 group-hover:border-bronze group-hover:bg-bronze group-hover:text-[color:var(--btn-ink)]">
+                <ArrowRight className="size-3" />
+              </span>
+            </div>
+            <span className="absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,#c9ff3f,#3ce8ff,#8b5cff,#ff4d9d)] opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
           </Link>
         ))}
       </div>
 
       {filtered.length === 0 ? (
         <div className="py-24 text-center">
-          <p className="mono-label">No modules match this reel</p>
+          <p className="hud-label">No modules match this reel</p>
           <button
             onClick={() => {
               setQuery("");

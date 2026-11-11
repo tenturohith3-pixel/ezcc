@@ -294,6 +294,7 @@ export function StudioWorkspace() {
       pushHistory(paramsRef.current);
       const next = defaultParams();
       applyLook(next, look, paramsRef.current.lookIntensity / 100);
+      next.look = look.id;
       setParams(next);
     },
     [pushHistory],

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Serif, Inter, JetBrains_Mono } from "next/font/google";
+import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/site/Nav";
 import { Footer } from "@/components/site/Footer";
@@ -13,11 +13,10 @@ const inter = Inter({
   display: "swap",
 });
 
-const serif = Instrument_Serif({
+const grotesk = Space_Grotesk({
   subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-serif",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-grotesk",
   display: "swap",
 });
 
@@ -29,18 +28,18 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "EffectCraft — Cinematic Post-Production Platform",
+    default: "EffectCraft — The Spectral Color Lab",
     template: "%s — EffectCraft",
   },
   description:
-    "Studio-grade color grading and a premium Prism plugin ecosystem, right in the browser. Grade, effect, deliver.",
+    "A cinematic color engine, a Rust detail engine, and 65 Prism modules — computed entirely in your browser. No uploads, no render queue.",
   applicationName: "EffectCraft",
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0a0908" },
-    { media: "(prefers-color-scheme: light)", color: "#f3eee4" },
+    { media: "(prefers-color-scheme: dark)", color: "#07070b" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f2ec" },
   ],
   colorScheme: "dark light",
 };
@@ -52,7 +51,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${serif.variable} ${mono.variable}`}
+      className={`${inter.variable} ${grotesk.variable} ${mono.variable}`}
     >
       <body className="bg-bg text-ink min-h-screen antialiased">
         {/* appearance boots before first paint — never flash the wrong room */}

@@ -76,7 +76,7 @@ export function ThemeToggle({
             "grid place-items-center rounded-full transition-all duration-300",
             compact ? "size-6" : "size-7",
             pref === id
-              ? "bg-bronze/20 text-bronze-bright shadow-[inset_0_0_0_1px_rgba(201,160,106,0.35)]"
+              ? "bg-bronze/15 text-bronze-bright ring-1 ring-inset ring-bronze/35"
               : "text-ink-faint hover:text-ink-muted",
           )}
         >

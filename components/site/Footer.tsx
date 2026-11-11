@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Clapperboard } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { FooterWordmark } from "@/components/site/FooterWordmark";
+import { PrismMark } from "@/components/site/PrismMark";
 
 const COLS: { title: string; links: { href: string; label: string }[] }[] = [
   {
@@ -31,37 +32,57 @@ const COLS: { title: string; links: { href: string; label: string }[] }[] = [
 
 export function Footer() {
   return (
-    <footer className="relative border-t border-line mt-40 overflow-hidden">
-      <div className="mx-auto max-w-7xl px-6 pt-20 pb-20">
-        <div className="grid grid-cols-1 md:grid-cols-[1.6fr_1fr_1fr_1fr] gap-12">
+    <footer className="relative mt-24 overflow-hidden border-t border-line bg-bg-raised/20">
+      <div className="grid-dots pointer-events-none absolute inset-0 opacity-40" />
+      <div
+        aria-hidden
+        className="aurora-blob -right-32 top-0 size-[30rem]"
+        style={{
+          background:
+            "radial-gradient(circle, rgba(60,232,255,0.14), transparent 66%)",
+        }}
+      />
+
+      <div className="relative mx-auto max-w-[92rem] px-6 pb-10 pt-20 md:px-10">
+        <div className="grid grid-cols-1 gap-12 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="grid place-items-center size-8 rounded-lg border border-line bg-tint">
-                <Clapperboard className="size-4 text-bronze-bright" strokeWidth={1.75} />
+            <Link href="/" className="inline-flex items-center gap-3">
+              <PrismMark className="size-9" />
+              <span>
+                <span className="display block text-[15px] font-bold uppercase leading-none tracking-[0.16em]">
+                  EffectCraft
+                </span>
+                <span className="hud-label mt-1.5 block !text-[8px]">
+                  Spectral lab / 04
+                </span>
               </span>
-              <span className="display text-[15px] tracking-[0.14em] uppercase">
-                EffectCraft
+            </Link>
+
+            <p className="mt-6 max-w-xs text-sm leading-relaxed text-ink-muted">
+              Studio-grade grading, a Rust detail engine, and the 65-module
+              Prism ecosystem — all computed in your browser.
+            </p>
+
+            <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-line px-3 py-1.5">
+              <span className="size-1.5 rounded-full bg-bronze glow-dot" />
+              <span className="hud-label !text-[8px] !text-ink-muted">
+                All systems nominal
               </span>
             </div>
-            <p className="mt-5 text-sm text-ink-muted leading-relaxed max-w-xs">
-              Studio-grade grading and a premium Prism plugin ecosystem —
-              engineered to run entirely in the browser.
-            </p>
-            <p className="mt-6 mono-label !text-[10px]">
-              SYS.OK — EDGE IAD1
-            </p>
           </div>
+
           {COLS.map((col) => (
             <div key={col.title}>
-              <p className="mono-label mb-5">{col.title}</p>
+              <p className="hud-label mb-5">{col.title}</p>
               <ul className="space-y-3">
                 {col.links.map((l) => (
                   <li key={l.href + l.label}>
                     <Link
                       href={l.href}
-                      className="text-sm text-ink-muted hover:text-ink transition-colors"
+                      className="group inline-flex items-center gap-1.5 text-sm text-ink-muted transition-colors hover:text-ink"
                     >
                       {l.label}
+                      <ArrowUpRight className="size-3 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
                     </Link>
                   </li>
                 ))}
@@ -69,16 +90,24 @@ export function Footer() {
             </div>
           ))}
         </div>
-        <div className="hairline my-12" />
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+
+        <div className="hairline my-10" />
+
+        <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <p className="text-xs text-ink-faint">
-            © 2026 EffectCraft. Cinematic precision, engineered.
+            © 2026 EffectCraft. Make light obey.
           </p>
-          <p className="mono-label !text-[10px]">
-            Built on Next.js — Runs on the edge
-          </p>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="hud-label !text-[8px]">Edge IAD1</span>
+            <span className="hud-label !text-[8px]">0 bytes uploaded</span>
+            <span className="hud-label flex items-center gap-2 !text-[8px]">
+              <span className="size-1 rounded-full bg-bronze" />
+              Build 4.0
+            </span>
+          </div>
         </div>
       </div>
+
       <FooterWordmark />
     </footer>
   );

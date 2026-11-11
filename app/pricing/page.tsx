@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Check, ShieldCheck, Boxes } from "lucide-react";
+import { ArrowUpRight, Check, ShieldCheck, Boxes } from "lucide-react";
 import { Reveal } from "@/components/site/Reveal";
 import { PricingTools } from "@/components/pricing/PricingTools";
+import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = {
   title: "Pricing & Keys",
@@ -106,112 +107,217 @@ const STEPS = [
   },
 ];
 
+const FAQ = [
+  {
+    q: "How do I buy a key?",
+    a: "Click any tier's button (or the Prism Bundle card) — it opens a pre-filled email to support. We confirm payment and send your key by email, usually within 24 hours. Then paste it into Studio.",
+  },
+  {
+    q: "Do I need an account?",
+    a: "No. The Studio runs entirely in your browser — nothing to sign up for. Your key is the only state, and it lives in your browser.",
+  },
+  {
+    q: "Can I buy plugins individually?",
+    a: "No — that's the point of the bundle. All 65 modules ship together for $29 (one-time), and the bundle is already included free with Studio and Lifetime keys.",
+  },
+  {
+    q: "What happens when my key expires?",
+    a: "The Studio quietly drops back to Free — your parameters stay, locked tools grey out, exports ceiling to 1080p, plugin downloads pause. Activate a fresh key and everything returns.",
+  },
+  {
+    q: "Can I use exports commercially?",
+    a: "Graded outputs you create are yours. The Lifetime tier explicitly includes a commercial license; free-tier exports are for personal and evaluation use.",
+  },
+];
+
 export default function PricingPage() {
   return (
-    <main className="relative overflow-hidden pt-36">
-      <div className="fixed inset-0 pointer-events-none" aria-hidden>
+    <main className="relative overflow-x-clip pt-36">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
         <div
-          className="ambient-a absolute -top-40 left-1/3 size-[40rem] rounded-full blur-[150px] opacity-[0.12]"
+          className="aurora-blob -right-40 -top-24 size-[38rem]"
           style={{
             background:
-              "radial-gradient(circle, rgba(201,160,106,0.5), transparent 65%)",
+              "radial-gradient(circle, rgba(201,255,63,0.16), transparent 66%)",
+          }}
+        />
+        <div
+          className="aurora-blob -left-40 top-1/4 size-[34rem]"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(60,232,255,0.12), transparent 66%)",
           }}
         />
       </div>
 
-      <section className="px-6 md:px-12">
-        <div className="max-w-4xl mx-auto text-center">
+      <section className="relative px-6 md:px-10">
+        <div className="mx-auto max-w-[92rem]">
           <Reveal>
-            <span className="pill-badge">PRICING — USD</span>
-            <h1 className="display text-5xl md:text-7xl gradient-text mt-8 text-balance">
-              Free until you need more.
-            </h1>
-            <p className="mt-6 text-lg text-ink-muted font-light leading-relaxed">
-              No accounts, no subscriptions, no device locks. Keys are
-              server-verified in seconds.
-            </p>
-          </Reveal>
-          <Reveal delay={130}>
-            <div className="mt-10 flex justify-center">
-              <PricingTools />
+            <div className="grid gap-10 border-b border-line pb-12 lg:grid-cols-[1.5fr_auto] lg:items-end">
+              <div>
+                <p className="hud-label">
+                  <span className="text-bronze">[07]</span> Ownership · USD
+                </p>
+                <h1 className="display mt-5 text-[clamp(3rem,7vw,6.4rem)] font-bold uppercase leading-[0.84]">
+                  Free until
+                  <br />
+                  you need <span className="spectrum-text">more.</span>
+                </h1>
+                <p className="mt-6 max-w-lg text-[14px] leading-relaxed text-ink-muted">
+                  No accounts, no subscriptions, no device locks. Keys are
+                  server-verified in seconds — and the free tier never nags you.
+                </p>
+              </div>
+              <div className="lg:justify-self-end lg:pb-2">
+                <PricingTools />
+              </div>
             </div>
           </Reveal>
         </div>
       </section>
 
       {/* ── Tiers ── */}
-      <section className="relative py-24 px-6 md:px-12">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {TIERS.map((t, i) => (
-            <Reveal key={t.name} delay={i * 90}>
-              <div
-                className={
-                  t.featured
-                    ? "glass card-hover h-full p-8 border-bronze/40 relative"
-                    : "glass card-hover h-full p-8 relative"
-                }
-              >
-                {t.featured ? (
-                  <span className="absolute top-5 right-5 mono-label !text-[9px] text-bronze-bright">
-                    POPULAR
-                  </span>
-                ) : null}
-                <p className="display text-xl">{t.name}</p>
-                <p className="mt-5">
-                  <span className="display text-4xl">{t.price}</span>
-                </p>
-                <p className="mono-label !text-[9px] mt-2">{t.note}</p>
-                <ul className="mt-7 space-y-2.5">
-                  {t.perks.map((perk) => (
-                    <li key={perk} className="flex items-start gap-2 text-[13px] text-ink-muted">
-                      <Check className="size-3.5 mt-0.5 text-bronze-bright shrink-0" strokeWidth={2} />
-                      {perk}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-8">
-                  <Link href={t.cta.href} className={t.featured ? "btn-primary w-full justify-center text-[13px]" : "btn-ghost w-full justify-center text-[13px]"}>
-                    {t.cta.label}
-                  </Link>
+      <section className="relative px-6 py-16 md:px-10">
+        <div className="mx-auto max-w-[92rem]">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {TIERS.map((t, i) => (
+              <Reveal key={t.name} delay={i * 80} className="h-full">
+                <div
+                  className={cn(
+                    "relative flex h-full flex-col overflow-hidden rounded-2xl border p-6 transition-colors duration-300",
+                    t.featured
+                      ? "prism-border border-bronze/40 bg-bronze/[0.06]"
+                      : "border-line bg-bg-raised/40 hover:border-line-strong",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span
+                      className={cn(
+                        "hud-label",
+                        t.featured && "!text-bronze-bright",
+                      )}
+                    >
+                      {t.name}
+                    </span>
+                    {t.featured ? (
+                      <span className="rounded-full bg-bronze px-2.5 py-1 font-mono text-[7px] font-semibold uppercase leading-none tracking-[0.18em] text-[color:var(--btn-ink)]">
+                        Most popular
+                      </span>
+                    ) : (
+                      <span className="mono-num text-[9px] text-ink-faint">
+                        0{i + 1}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="display mt-6 text-5xl leading-none">{t.price}</p>
+                  <p className="hud-label mt-2 !text-[8px]">{t.note}</p>
+
+                  <div className="my-6 h-px bg-line" />
+
+                  <ul className="space-y-2.5">
+                    {t.perks.map((perk) => (
+                      <li
+                        key={perk}
+                        className="flex items-start gap-2.5 text-[13px] leading-snug text-ink-muted"
+                      >
+                        <Check
+                          className={cn(
+                            "mt-0.5 size-3.5 shrink-0",
+                            t.featured ? "text-bronze-bright" : "text-bronze",
+                          )}
+                          strokeWidth={2.25}
+                        />
+                        {perk}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="mt-auto pt-8">
+                    <Link
+                      href={t.cta.href}
+                      className={cn(
+                        "group w-full justify-center !py-2.5 !text-[12px]",
+                        t.featured ? "btn-primary" : "btn-ghost",
+                      )}
+                    >
+                      {t.cta.label}
+                      <ArrowUpRight className="size-3.5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                    </Link>
+                  </div>
                 </div>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal delay={160}>
+            <Link
+              href="#bundle"
+              className="group mt-3 flex flex-col items-start justify-between gap-4 rounded-2xl border border-line bg-bg-raised/30 px-6 py-5 transition-colors hover:border-bronze/40 sm:flex-row sm:items-center"
+            >
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span className="chip !border-bronze/30 !text-bronze-bright">
+                  Prism bundle
+                </span>
+                <p className="text-[13px] text-ink-muted">
+                  All 65 modules —{" "}
+                  <span className="text-ink">$29</span>, included with Studio
+                  &amp; Lifetime.
+                </p>
               </div>
-            </Reveal>
-          ))}
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-muted transition-colors group-hover:text-ink">
+                See what&rsquo;s inside
+                <ArrowUpRight className="size-3.5" />
+              </span>
+            </Link>
+          </Reveal>
         </div>
       </section>
 
       {/* ── Prism Bundle ── */}
-      <section id="bundle" className="relative py-16 px-6 md:px-12 scroll-mt-24">
-        <div className="max-w-5xl mx-auto">
+      <section
+        id="bundle"
+        className="relative scroll-mt-24 border-t border-line px-6 py-24 md:px-10"
+      >
+        <div className="mx-auto max-w-[92rem]">
           <Reveal>
-            <div className="glass p-8 md:p-12 border-bronze/30 relative overflow-hidden">
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(201,160,106,0.09),transparent_60%)] pointer-events-none" />
-              <div className="grid grid-cols-1 md:grid-cols-[1.5fr_1fr] gap-8 items-center relative">
+            <div className="prism-border relative overflow-hidden rounded-2xl border border-bronze/30 bg-bronze/[0.05]">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-bronze/15 blur-3xl"
+              />
+              <div className="relative grid gap-10 p-8 md:grid-cols-[1.5fr_1fr] md:items-center md:p-12">
                 <div>
-                  <p className="mono-label !text-[9px] !text-bronze-bright flex items-center gap-2">
-                    <Boxes className="size-4" /> PLUGINS ARE PAID · ONE BUNDLE
+                  <p className="hud-label flex items-center gap-2 !text-bronze-bright">
+                    <Boxes className="size-4" /> Plugins are paid · one bundle
                   </p>
-                  <h2 className="display text-3xl md:text-5xl mt-4 gradient-text">
-                    The Prism Bundle.
+                  <h2 className="display mt-4 text-[clamp(2.4rem,4.6vw,4rem)] font-bold uppercase leading-[0.88]">
+                    The Prism
+                    <br />
+                    <span className="spectrum-text">Bundle.</span>
                   </h2>
-                  <p className="mt-4 text-[15px] text-ink-muted leading-relaxed max-w-xl">
+                  <p className="mt-5 max-w-xl text-[14px] leading-relaxed text-ink-muted">
                     All 65 WASM modules — S_Glow, S_Light Rays, Twixtor Pro, the
                     whole catalog — plus every module we add later. Never sold
-                    individually: one key unlocks every binary, forever. Server-
-                    verified on each download, unwatermarked, yours to keep.
+                    individually: one key unlocks every binary, forever.
+                    Server-verified on each download, unwatermarked, yours to
+                    keep.
                   </p>
-                  <p className="mono-num text-[11px] text-ink-faint mt-4">
-                    INCLUDED FREE WITH STUDIO &amp; LIFETIME KEYS
+                  <p className="hud-label mt-5">
+                    Included free with Studio &amp; Lifetime keys
                   </p>
                 </div>
                 <div className="md:text-right">
-                  <p className="display text-6xl prism-text">$29</p>
-                  <p className="mono-label !text-[9px] mt-2">ONE-TIME · NO SUBSCRIPTION</p>
+                  <p className="display spectrum-text text-6xl font-bold leading-none">
+                    $29
+                  </p>
+                  <p className="hud-label mt-3">One-time · no subscription</p>
                   <Link
                     href={`mailto:${MAIL}?subject=${encodeURIComponent("Order: Prism Bundle ($29)")}`}
-                    className="btn-primary mt-6 w-full md:w-auto justify-center gap-2"
+                    className="btn-primary group mt-6 w-full justify-center gap-2 md:w-auto"
                   >
                     Get the bundle — $29
+                    <ArrowUpRight className="size-3.5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                   </Link>
                 </div>
               </div>
@@ -221,84 +327,99 @@ export default function PricingPage() {
       </section>
 
       {/* ── How keys work ── */}
-      <section id="how-keys-work" className="relative py-24 px-6 md:px-12 border-t border-line/60">
-        <div className="max-w-7xl mx-auto">
+      <section
+        id="how-keys-work"
+        className="relative border-t border-line px-6 py-24 md:px-10"
+      >
+        <div className="mx-auto max-w-[92rem]">
           <Reveal>
-            <p className="mono-label mb-4">How keys work</p>
-            <h2 className="display text-4xl md:text-5xl gradient-text max-w-2xl">
-              Minted privately. Verified publicly.
+            <p className="hud-label">
+              <span className="text-bronze">[08]</span> Key protocol
+            </p>
+            <h2 className="display mt-4 max-w-2xl text-[clamp(2.4rem,4.6vw,4rem)] font-bold uppercase leading-[0.9]">
+              Minted privately.
+              <br />
+              <span className="spectrum-text">Verified publicly.</span>
             </h2>
           </Reveal>
-          <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-12 grid grid-cols-1 gap-3 md:grid-cols-3">
             {STEPS.map((s, i) => (
-              <Reveal key={s.n} delay={i * 100}>
-                <div className="glass p-8 h-full">
-                  <p className="mono-num text-bronze-bright text-sm">{s.n}</p>
-                  <h3 className="display text-xl mt-4">{s.title}</h3>
-                  <p className="mt-3 text-sm text-ink-muted leading-relaxed">{s.body}</p>
+              <Reveal key={s.n} delay={i * 80} className="h-full">
+                <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-bg-raised/40 p-7">
+                  <span className="mono-num text-[10px] text-bronze">
+                    {s.n}
+                  </span>
+                  <h3 className="display mt-4 text-xl font-bold uppercase tracking-[-0.02em]">
+                    {s.title}
+                  </h3>
+                  <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">
+                    {s.body}
+                  </p>
+                  <span className="mt-auto block pt-6">
+                    <span className="block h-px w-full bg-line" />
+                  </span>
                 </div>
               </Reveal>
             ))}
           </div>
 
           <Reveal delay={120}>
-            <div className="glass mt-8 p-7 flex items-start gap-4">
-              <ShieldCheck className="size-5 text-bronze-bright shrink-0 mt-0.5" strokeWidth={1.5} />
-              <div>
-                <p className="text-sm text-ink leading-relaxed">
-                  Keys are cryptographically signed with a secret that lives only
-                  on the server — activation checks that signature through the
-                  key service, and plugin downloads re-verify it again per
-                  download. Reverse-engineering the site doesn&rsquo;t reveal how
-                  to mint one.
-                </p>
-              </div>
+            <div className="mt-3 flex items-start gap-4 rounded-2xl border border-line bg-bg-raised/30 p-6">
+              <ShieldCheck
+                className="mt-0.5 size-5 shrink-0 text-bronze"
+                strokeWidth={1.5}
+              />
+              <p className="max-w-4xl text-[13px] leading-relaxed text-ink-muted">
+                Keys are cryptographically signed with a secret that lives only
+                on the server — activation checks that signature through the key
+                service, and plugin downloads re-verify it again per download.
+                Reverse-engineering the site doesn&rsquo;t reveal how to mint
+                one.
+              </p>
             </div>
           </Reveal>
         </div>
       </section>
 
       {/* ── FAQ ── */}
-      <section id="pricing-faq" className="relative py-24 px-6 md:px-12 border-t border-line/60">
-        <div className="max-w-3xl mx-auto">
+      <section
+        id="pricing-faq"
+        className="relative border-t border-line px-6 py-24 md:px-10"
+      >
+        <div className="mx-auto grid max-w-[92rem] gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
           <Reveal>
-            <p className="mono-label mb-4">FAQ</p>
-            <h2 className="display text-4xl md:text-5xl gradient-text">
-              Straight answers.
+            <p className="hud-label">
+              <span className="text-bronze">[09]</span> FAQ
+            </p>
+            <h2 className="display mt-4 text-[clamp(2.4rem,4.6vw,4rem)] font-bold uppercase leading-[0.9]">
+              Straight
+              <br />
+              <span className="spectrum-text">answers.</span>
             </h2>
+            <p className="mt-5 max-w-xs text-[13px] leading-relaxed text-ink-muted">
+              Still unclear? Write to{" "}
+              <a
+                href={`mailto:${MAIL}`}
+                className="text-ink underline decoration-bronze/50 underline-offset-4 hover:text-bronze"
+              >
+                support
+              </a>{" "}
+              — a human answers.
+            </p>
           </Reveal>
-          <div className="mt-12 space-y-3">
-            {[
-              {
-                q: "How do I buy a key?",
-                a: "Click any tier's button (or the Prism Bundle card) — it opens a pre-filled email to support. We confirm payment and send your key by email, usually within 24 hours. Then paste it into Studio.",
-              },
-              {
-                q: "Do I need an account?",
-                a: "No. The Studio runs entirely in your browser — nothing to sign up for. Your key is the only state, and it lives in your browser.",
-              },
-              {
-                q: "Can I buy plugins individually?",
-                a: "No — that's the point of the bundle. All 65 modules ship together for $29 (one-time), and the bundle is already included free with Studio and Lifetime keys.",
-              },
-              {
-                q: "What happens when my key expires?",
-                a: "The Studio quietly drops back to Free — your parameters stay, locked tools grey out, exports ceiling to 1080p, plugin downloads pause. Activate a fresh key and everything returns.",
-              },
-              {
-                q: "Can I use exports commercially?",
-                a: "Graded outputs you create are yours. The Lifetime tier explicitly includes a commercial license; free-tier exports are for personal and evaluation use.",
-              },
-            ].map((f, i) => (
-              <Reveal key={f.q} delay={i * 60}>
-                <details className="glass group px-6 py-5 [&_summary::-webkit-details-marker]:hidden">
-                  <summary className="flex items-center justify-between cursor-pointer list-none">
-                    <span className="text-[15px]">{f.q}</span>
-                    <span className="mono-num text-bronze-bright text-sm group-open:rotate-45 transition-transform">
+          <div className="space-y-2">
+            {FAQ.map((f, i) => (
+              <Reveal key={f.q} delay={i * 50}>
+                <details className="group rounded-xl border border-line bg-bg-raised/40 px-5 py-4 transition-colors open:border-bronze/30 [&_summary::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                    <span className="text-[14px]">{f.q}</span>
+                    <span className="mono-num text-sm text-bronze transition-transform group-open:rotate-45">
                       +
                     </span>
                   </summary>
-                  <p className="mt-4 text-sm text-ink-muted leading-relaxed">{f.a}</p>
+                  <p className="mt-4 max-w-2xl text-[13px] leading-relaxed text-ink-muted">
+                    {f.a}
+                  </p>
                 </details>
               </Reveal>
             ))}

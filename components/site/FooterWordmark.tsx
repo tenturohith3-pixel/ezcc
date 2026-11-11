@@ -28,8 +28,8 @@ export function FooterWordmark() {
         ease: "none",
         scrollTrigger: {
           trigger: wrapRef.current,
-          start: "top 96%",
-          end: "top 55%",
+          start: "top bottom",
+          end: "bottom bottom",
           scrub: 0.5,
         },
       });
@@ -39,7 +39,7 @@ export function FooterWordmark() {
 
   return (
     <div ref={wrapRef} aria-hidden className="select-none px-4 pb-2 overflow-hidden">
-      <p className="display gradient-text leading-[0.9] tracking-tight text-center text-[17.5vw] whitespace-nowrap">
+      <p className="display spectrum-text text-center text-[15vw] font-bold leading-[0.9] tracking-[-0.055em] whitespace-nowrap opacity-90">
         EFFECTCRAFT
       </p>
     </div>

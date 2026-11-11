@@ -112,29 +112,35 @@ export function CompareShowcase() {
   const activeLook = LOOKS.find((l) => l.id === lookId);
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex flex-wrap items-center gap-2 justify-center mb-8">
-        {LOOKS.filter((l) => (PICKED as readonly string[]).includes(l.id)).map(
-          (l) => (
-            <button
-              key={l.id}
-              onClick={() => applyLookId(l.id)}
-              className={cn(
-                "px-4 py-2 rounded-lg text-[13px] border transition-all duration-200",
-                lookId === l.id
-                  ? "border-bronze/50 bg-bronze/10 text-bronze-bright"
-                  : "border-line text-ink-muted hover:text-ink hover:border-line-strong",
-              )}
-            >
-              {l.name}
-            </button>
-          ),
-        )}
+    <div className="mx-auto max-w-6xl">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1 rounded-full border border-line bg-bg/50 p-1 backdrop-blur-xl">
+          {LOOKS.filter((l) => (PICKED as readonly string[]).includes(l.id)).map(
+            (l) => (
+              <button
+                key={l.id}
+                onClick={() => applyLookId(l.id)}
+                className={cn(
+                  "rounded-full px-3.5 py-1.5 text-[11px] transition-all duration-200",
+                  lookId === l.id
+                    ? "bg-bronze font-semibold text-[color:var(--btn-ink)]"
+                    : "text-ink-muted hover:bg-tint hover:text-ink",
+                )}
+              >
+                {l.name}
+              </button>
+            ),
+          )}
+        </div>
+        <span className="hud-label flex items-center gap-2">
+          <span className="size-1.5 animate-pulse rounded-full bg-bronze" />
+          Live engine · {activeLook?.name ?? "Look"}
+        </span>
       </div>
 
       <div
         className={cn(
-          "relative rounded-2xl border border-line overflow-hidden bg-bg-raised select-none",
+          "relative overflow-hidden rounded-[1.5rem] border border-line-strong/70 bg-bg-raised select-none",
           grabbing && "cursor-grabbing",
         )}
         ref={cardRef}
@@ -144,44 +150,65 @@ export function CompareShowcase() {
         onPointerLeave={end}
         style={{ touchAction: grabbing ? "none" : "pan-y" }}
       >
+        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <span className="hud-label">Split view</span>
+            <span className="hud-label hidden sm:inline">1280 × 720</span>
+          </div>
+          <span className="hud-label hidden !text-bronze-bright/80 sm:inline">
+            Rust kernel · local
+          </span>
+        </div>
+
         <div data-stage className="relative aspect-[16/9]">
           <canvas
             ref={baseRef}
             width={W}
             height={H}
-            className="absolute inset-0 w-full h-full"
+            className="absolute inset-0 h-full w-full"
           />
           <canvas
             ref={gradedRef}
             width={W}
             height={H}
-            className="absolute inset-0 w-full h-full"
+            className="absolute inset-0 h-full w-full"
             style={{ clipPath: `inset(0 0 0 ${split}%)` }}
           />
           <div
-            className="absolute top-0 bottom-0 w-px"
+            className="absolute bottom-0 top-0 w-px"
             style={{
               left: `${split}%`,
               background:
-                "linear-gradient(to bottom, transparent, rgba(232,207,162,0.9), transparent)",
-              boxShadow: "0 0 24px rgba(232,207,162,0.5)",
+                "linear-gradient(to bottom, transparent, var(--color-bronze), transparent)",
+              boxShadow:
+                "0 0 26px color-mix(in srgb, var(--color-bronze) 60%, transparent)",
             }}
           >
             <div
               data-handle=""
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 grid place-items-center size-9 rounded-full border border-bronze-bright/60 bg-black/60 backdrop-blur-md"
+              className="absolute top-1/2 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-bronze/60 bg-black/70 shadow-[0_0_30px_rgba(201,255,63,0.3)] backdrop-blur-md"
             >
-              <MoveHorizontal className="size-4 text-bronze-bright" />
+              <MoveHorizontal className="size-4 text-[#e6ff96]" />
             </div>
           </div>
-          <span className="absolute left-4 top-4 pill-badge !bg-black/40">Original</span>
-          <span className="absolute right-4 top-4 pill-badge !bg-black/40 text-bronze-bright">
-            {activeLook?.name ?? "Look"} — engine live
+          <span className="hud-label absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1.5 !text-white/75 backdrop-blur-md">
+            Original
+          </span>
+          <span className="hud-label absolute right-4 top-4 rounded-full bg-black/55 px-3 py-1.5 !text-[#e6ff96] backdrop-blur-md">
+            {activeLook?.name ?? "Look"} · engine live
+          </span>
+          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
+        </div>
+
+        <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
+          <span className="hud-label">Drag to compare</span>
+          <span className="hud-label hidden sm:inline">
+            Same engine as the Studio · deterministic output
           </span>
         </div>
       </div>
-      <p className="text-center mt-5 mono-label !text-[10px]">
-        DRAG THE LINE — REAL GRADES, RENDERED IN YOUR BROWSER
+      <p className="hud-label mt-5 text-center">
+        Real grades, rendered in your browser — not a screenshot
       </p>
     </div>
   );

@@ -159,8 +159,9 @@ export function GradeConsole({ className }: { className?: string }) {
   return (
     <div className={cn("relative", className)}>
       {/* ── exhibit frame ── */}
-      <div className="matte relative rounded-[3px] bg-bg-raised">
-        <div className="relative aspect-[16/9] overflow-hidden rounded-[3px]">
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_90px_-40px_rgba(0,0,0,0.9)]">
+        <div className="spectrum-bar opacity-90" />
+        <div className="relative aspect-[16/9] overflow-hidden">
           <canvas
             ref={canvasRef}
             width={W}
@@ -190,26 +191,28 @@ export function GradeConsole({ className }: { className?: string }) {
 
           <span className="absolute left-4 top-3.5 flex items-center gap-2 rounded-full bg-black/45 px-3 py-1.5 backdrop-blur-sm">
             <span className="size-1 rounded-full bg-bronze-bright pulse-soft" />
-            <span className="mono-label !text-[8px] !text-bronze-bright !tracking-[0.24em]">
+            <span className="hud-label !text-[#e6ff96]">
               Live grade
             </span>
           </span>
-          <Timecode className="absolute right-4 top-3.5 rounded-full bg-black/45 px-3 py-1.5 text-[9px] text-white/70 backdrop-blur-sm" />
+          <Timecode className="timecode absolute right-4 top-3.5 rounded-full bg-black/45 px-3 py-1.5 text-[9px] text-white/70 backdrop-blur-sm" />
+          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
         </div>
 
         {/* caption rail */}
-        <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
-          <span className="mono-label !text-[8px]">
-            EXHIBIT 01 — THE FLAT FRAME
+        <div className="flex items-center justify-between border-t border-white/10 bg-black/60 px-4 py-2.5 backdrop-blur-sm">
+          <span className="hud-label !text-white/45">
+            Exhibit 01 — the flat frame
           </span>
-          <span className="mono-label !text-[8px] !text-ink-faint">
-            RUST KERNEL · LOCAL
+          <span className="hud-label !text-[#e6ff96]/80">
+            Rust kernel · local
           </span>
         </div>
       </div>
 
       {/* ── console tray ── */}
-      <div className="relative mt-4 rounded-xl border border-line bg-bg-raised/70 backdrop-blur-xl">
+      <div className="relative mt-3 overflow-hidden rounded-2xl border border-line bg-bg-raised/60 backdrop-blur-xl">
+        <div className="spectrum-bar opacity-50" />
         <div className="grid gap-5 p-4 sm:p-5 md:grid-cols-[auto_1fr] md:items-center">
           {/* wheels */}
           <div className="flex items-start justify-center gap-4 sm:gap-5">
@@ -263,9 +266,7 @@ export function GradeConsole({ className }: { className?: string }) {
 
         {/* presets */}
         <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-line px-4 py-2">
-          <span className="mono-label !text-[8px] !text-ink-faint mr-2">
-            RECIPES
-          </span>
+          <span className="hud-label mr-2">Recipes</span>
           {PRESETS.map((p) => (
             <button
               key={p.id}
@@ -378,8 +379,13 @@ function Wheel({
         <span className="absolute left-1/2 top-1/2 h-px w-[42%] -translate-x-1/2 -translate-y-1/2 bg-line-strong/60" />
         <span className="absolute left-1/2 top-1/2 h-[42%] w-px -translate-x-1/2 -translate-y-1/2 bg-line-strong/60" />
         <span
-          className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/50 bg-bronze-bright shadow-[0_0_10px_rgba(201,160,106,0.5)]"
-          style={{ left: `${kx}%`, top: `${ky}%` }}
+          className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/50 bg-bronze-bright"
+          style={{
+            left: `${kx}%`,
+            top: `${ky}%`,
+            boxShadow:
+              "0 0 10px color-mix(in srgb, var(--color-bronze) 60%, transparent)",
+          }}
         />
       </div>
       <span className="mono-label !text-[7px] !tracking-[0.26em] !text-ink-faint">

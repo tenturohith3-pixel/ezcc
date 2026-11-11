@@ -15,7 +15,7 @@ export function ContactForm() {
 
   return (
     <form
-      className="glass p-7 md:p-9 space-y-5"
+      className="relative overflow-hidden rounded-2xl border border-line bg-bg-raised/40 p-6 md:p-8"
       onSubmit={(e) => {
         e.preventDefault();
         if (!name.trim() || name.trim().length < 2) {
@@ -37,45 +37,50 @@ export function ContactForm() {
         window.location.href = `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       }}
     >
-      <p className="mono-label">INQUIRY</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="flex items-center justify-between border-b border-line pb-4">
+        <p className="hud-label">Inquiry</p>
+        <span className="hud-label !text-[7px] !text-ink-faint">
+          Direct · no server
+        </span>
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mono-label !text-[9px] block mb-2">NAME</span>
+          <span className="hud-label mb-2 block !text-[8px]">Name</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
-            className="w-full rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
+            className="w-full rounded-xl border border-line bg-tint-soft px-4 py-3 text-sm outline-none transition-colors placeholder:text-ink-faint focus:border-bronze/50"
           />
         </label>
         <label className="block">
-          <span className="mono-label !text-[9px] block mb-2">EMAIL</span>
+          <span className="hud-label mb-2 block !text-[8px]">Email</span>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@studio.film"
-            className="w-full rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint"
+            className="w-full rounded-xl border border-line bg-tint-soft px-4 py-3 text-sm outline-none transition-colors placeholder:text-ink-faint focus:border-bronze/50"
           />
         </label>
       </div>
-      <label className="block">
-        <span className="mono-label !text-[9px] block mb-2">PROJECT</span>
+      <label className="mt-4 block">
+        <span className="hud-label mb-2 block !text-[8px]">Project</span>
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={5}
           placeholder="What are you grading, how many frames, when does it ship?"
-          className="w-full rounded-lg bg-tint-soft border border-line px-4 py-3 text-sm outline-none focus:border-bronze/50 placeholder:text-ink-faint resize-none"
+          className="w-full resize-none rounded-xl border border-line bg-tint-soft px-4 py-3 text-sm outline-none transition-colors placeholder:text-ink-faint focus:border-bronze/50"
         />
       </label>
 
       {error ? (
-        <p className="text-[12px] text-[#f05545]">{error}</p>
+        <p className="mt-4 text-[12px] text-[#f05545]">{error}</p>
       ) : null}
 
       {tidy && !error ? (
-        <div className="rounded-lg border border-[#68c96a]/30 bg-[#68c96a]/[0.07] px-4 py-3 space-y-2">
+        <div className="mt-4 space-y-2 rounded-xl border border-[#68c96a]/30 bg-[#68c96a]/[0.07] px-4 py-3">
           <p className="flex items-center gap-2 text-[12px] text-[#68c96a]">
             <CheckCircle2 className="size-3.5" />
             Mail client opened — here's a copy of the draft:
@@ -100,12 +105,15 @@ export function ContactForm() {
         </div>
       ) : null}
 
-      <button type="submit" className="btn-primary w-full justify-center gap-2">
+      <button
+        type="submit"
+        className="btn-primary mt-6 w-full justify-center gap-2"
+      >
         <Send className="size-4" />
         Submit inquiry
       </button>
-      <p className="mono-label !text-[8px] text-center !text-ink-faint">
-        OPENS YOUR MAIL CLIENT — NOTHING UPLOADED, NO SERVER
+      <p className="hud-label mt-4 text-center !text-[8px] !text-ink-faint">
+        Opens your mail client — nothing uploaded, no server
       </p>
     </form>
   );

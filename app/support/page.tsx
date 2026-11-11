@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Mail, Timer, ShieldCheck } from "lucide-react";
+import { Mail, Timer, ShieldCheck, ArrowUpRight } from "lucide-react";
 import { Reveal } from "@/components/site/Reveal";
 import { ContactForm } from "@/components/support/ContactForm";
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 const CHANNELS = [
   {
     icon: Mail,
-    label: "MAIL",
+    label: "Mail",
     value: "support@effectcraft.studio",
     note: "answered first-come, same working week",
     href: "mailto:support@effectcraft.studio",
@@ -26,7 +26,7 @@ const CHANNELS = [
   },
   {
     icon: ShieldCheck,
-    label: "REFUNDS",
+    label: "Refunds",
     value: "No-questions",
     note: "annual keys refundable inside 14 days, untouched",
     href: "mailto:support@effectcraft.studio?subject=Refund",
@@ -57,51 +57,94 @@ const FAQ = [
 ];
 
 const STATUS = [
-  ["STUDIO ENGINE", "OPERATIONAL", true],
-  ["PLUGIN REGISTRY", "OPERATIONAL", true],
-  ["KEY VERIFICATION", "LOCAL-ONLY", true],
+  ["Studio engine", "Operational", true],
+  ["Plugin registry", "Operational", true],
+  ["Key verification", "Local-only", true],
 ] as const;
 
 export default function SupportPage() {
   return (
-    <main className="relative overflow-hidden pt-36">
-      <div className="fixed inset-0 pointer-events-none" aria-hidden>
+    <main className="relative overflow-x-clip pt-36">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
         <div
-          className="ambient-b absolute top-0 -left-40 size-[38rem] rounded-full blur-[140px] opacity-[0.1]"
+          className="aurora-blob -left-40 -top-24 size-[38rem]"
           style={{
             background:
-              "radial-gradient(circle, rgba(201,160,106,0.45), transparent 65%)",
+              "radial-gradient(circle, rgba(60,232,255,0.14), transparent 66%)",
+          }}
+        />
+        <div
+          className="aurora-blob -right-32 top-1/3 size-[32rem]"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255,77,157,0.10), transparent 66%)",
           }}
         />
       </div>
 
-      <section className="px-6 md:px-12">
-        <div className="max-w-4xl mx-auto text-center">
+      <section className="relative px-6 md:px-10">
+        <div className="mx-auto max-w-[92rem]">
           <Reveal>
-            <span className="pill-badge">SUPPORT</span>
-            <h1 className="display text-5xl md:text-7xl gradient-text mt-8 text-balance">
-              Quiet dispatch, real answers.
-            </h1>
+            <div className="grid gap-10 border-b border-line pb-12 lg:grid-cols-[1.5fr_1fr] lg:items-end">
+              <div>
+                <p className="hud-label">
+                  <span className="text-bronze">[10]</span> Support dispatch
+                </p>
+                <h1 className="display mt-5 text-[clamp(3rem,7vw,6.4rem)] font-bold uppercase leading-[0.84]">
+                  Quiet dispatch,
+                  <br />
+                  <span className="spectrum-text">real answers.</span>
+                </h1>
+              </div>
+              <div className="lg:pb-2 lg:text-right">
+                <p className="max-w-sm text-[14px] leading-relaxed text-ink-muted lg:ml-auto">
+                  A human reads every message. No ticket maze, no chatbot
+                  loop — just the team that builds the engine.
+                </p>
+                <span className="mt-6 inline-flex items-center gap-2 rounded-full border border-line px-3 py-1.5">
+                  <span className="size-1.5 rounded-full bg-bronze glow-dot" />
+                  <span className="hud-label !text-[8px] !text-ink-muted">
+                    All systems nominal
+                  </span>
+                </span>
+              </div>
+            </div>
           </Reveal>
         </div>
       </section>
 
       {/* Channels */}
-      <section className="relative py-20 px-6 md:px-12">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="relative px-6 py-16 md:px-10">
+        <div className="mx-auto grid max-w-[92rem] grid-cols-1 gap-3 md:grid-cols-3">
           {CHANNELS.map((c, i) => (
-            <Reveal key={c.label} delay={i * 90}>
+            <Reveal key={c.label} delay={i * 80} className="h-full">
               <a
                 href={c.href}
-                className="glass card-hover block p-7 h-full"
+                className="bento-card group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-bg-raised/40 p-6"
               >
-                <div className="flex items-center justify-between">
-                  <c.icon className="size-5 text-bronze-bright" strokeWidth={1.5} />
-                  <span className="mono-label !text-[8px] text-[#68c96a]">ONLINE</span>
+                <div className="flex items-start justify-between">
+                  <span className="grid size-10 place-items-center rounded-xl border border-line bg-tint">
+                    <c.icon className="size-4 text-bronze" strokeWidth={1.5} />
+                  </span>
+                  <span className="flex items-center gap-1.5 rounded-full border border-bronze/25 bg-bronze/[0.06] px-2.5 py-1">
+                    <span className="size-1 rounded-full bg-bronze" />
+                    <span className="hud-label !text-[7px] !text-bronze-bright">
+                      Online
+                    </span>
+                  </span>
                 </div>
-                <p className="mono-label mt-5">{c.label}</p>
-                <p className="display text-lg mt-2.5">{c.value}</p>
-                <p className="text-[12px] text-ink-muted mt-2 leading-relaxed">{c.note}</p>
+                <p className="hud-label mt-7">{c.label}</p>
+                <p className="display mt-2.5 text-xl font-bold tracking-[-0.02em]">
+                  {c.value}
+                </p>
+                <div className="mt-auto flex items-end justify-between gap-4 pt-7">
+                  <p className="text-[12px] leading-relaxed text-ink-muted">
+                    {c.note}
+                  </p>
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full border border-line-strong text-ink-faint transition-colors duration-300 group-hover:border-bronze group-hover:bg-bronze group-hover:text-[color:var(--btn-ink)]">
+                    <ArrowUpRight className="size-3" />
+                  </span>
+                </div>
               </a>
             </Reveal>
           ))}
@@ -109,41 +152,54 @@ export default function SupportPage() {
       </section>
 
       {/* FAQ + Status + Contact */}
-      <section id="faq" className="relative py-16 px-6 md:px-12">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+      <section id="faq" className="relative border-t border-line px-6 py-20 md:px-10 md:py-24">
+        <div className="mx-auto grid max-w-[92rem] grid-cols-1 items-start gap-10 lg:grid-cols-[1.15fr_1fr]">
           <Reveal>
-            <p className="mono-label mb-4">FAQ</p>
-            <h2 className="display text-3xl md:text-4xl mb-8">
+            <p className="hud-label">
+              <span className="text-bronze">[11]</span> FAQ
+            </p>
+            <h2 className="display mt-4 max-w-md text-[clamp(2.2rem,4vw,3.4rem)] font-bold uppercase leading-[0.9]">
               Before you write — it&rsquo;s probably here.
             </h2>
-            <div className="space-y-3">
+            <div className="mt-8 space-y-2">
               {FAQ.map((f) => (
                 <details
                   key={f.q}
-                  className="glass group px-6 py-5 [&_summary::-webkit-details-marker]:hidden"
+                  className="group rounded-xl border border-line bg-bg-raised/40 px-5 py-4 transition-colors open:border-bronze/30 [&_summary::-webkit-details-marker]:hidden"
                 >
-                  <summary className="flex items-center justify-between cursor-pointer list-none gap-4">
-                    <span className="text-[14.5px]">{f.q}</span>
-                    <span className="mono-num text-bronze-bright text-sm group-open:rotate-45 transition-transform shrink-0">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                    <span className="text-[14px]">{f.q}</span>
+                    <span className="mono-num shrink-0 text-sm text-bronze transition-transform group-open:rotate-45">
                       +
                     </span>
                   </summary>
-                  <p className="mt-4 text-sm text-ink-muted leading-relaxed">{f.a}</p>
+                  <p className="mt-4 text-[13px] leading-relaxed text-ink-muted">
+                    {f.a}
+                  </p>
                 </details>
               ))}
             </div>
 
-            <div id="status" className="glass mt-8 p-6">
-              <p className="mono-label mb-4">PLATFORM STATUS</p>
-              <ul className="space-y-2.5">
+            <div
+              id="status"
+              className="mt-8 overflow-hidden rounded-2xl border border-line bg-bg-raised/30 p-6"
+            >
+              <p className="hud-label mb-5 flex items-center gap-2">
+                <span className="size-1.5 rounded-full bg-bronze glow-dot" />
+                Platform status
+              </p>
+              <ul className="space-y-3">
                 {STATUS.map(([name, value, ok]) => (
-                  <li key={name} className="flex items-center justify-between">
-                    <span className="mono-num text-[11px]">{name}</span>
+                  <li
+                    key={name}
+                    className="flex items-center justify-between border-b border-line/60 pb-2.5 last:border-0 last:pb-0"
+                  >
+                    <span className="text-[12px] text-ink-muted">{name}</span>
                     <span
                       className={
                         ok
-                          ? "mono-num text-[11px] text-[#68c96a]"
-                          : "mono-num text-[11px] text-bronze-bright"
+                          ? "hud-label !text-[8px] !text-bronze-bright"
+                          : "hud-label !text-[8px] !text-ink-faint"
                       }
                     >
                       {value}
@@ -154,7 +210,7 @@ export default function SupportPage() {
             </div>
           </Reveal>
 
-          <Reveal delay={120}>
+          <Reveal delay={100}>
             <ContactForm />
           </Reveal>
         </div>
