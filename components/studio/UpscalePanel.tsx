@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Download, LoaderCircle, Sparkles } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  ArrowLeftRight,
+  ArrowUpRight,
+  Download,
+  LoaderCircle,
+  Maximize2,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { TIER_LABEL, TIER_MAX_EXPORT, TIER_MAX_UPSCALE, type Tier } from "@/lib/license";
 import { planUpscale, upscaleCanvas, type UpscaleLevel } from "@/lib/grade/upscale";
 import {
@@ -101,6 +110,156 @@ function pickDetailRegion(
   };
 }
 
+/** Native crop used by the full-size compare modal (240 → 480 at 2×). */
+const BIG_CROP = 240;
+
+/** Render the same native crop through the browser and the Detail Engine. */
+async function renderLoupe(
+  image: HTMLImageElement,
+  cropSize: number,
+  detail: number,
+  denoise: number,
+): Promise<{ before: string; after: string } | null> {
+  const region = pickDetailRegion(image, cropSize);
+  const crop = document.createElement("canvas");
+  crop.width = region.w;
+  crop.height = region.h;
+  const cctx = crop.getContext("2d");
+  if (!cctx) return null;
+  /* native pixels, no downscale — both sides start from the same data */
+  cctx.drawImage(
+    image,
+    region.x,
+    region.y,
+    region.w,
+    region.h,
+    0,
+    0,
+    region.w,
+    region.h,
+  );
+
+  const naive = document.createElement("canvas");
+  naive.width = region.w * 2;
+  naive.height = region.h * 2;
+  const nctx = naive.getContext("2d");
+  if (!nctx) return null;
+  nctx.imageSmoothingEnabled = true;
+  nctx.imageSmoothingQuality = "high";
+  nctx.drawImage(crop, 0, 0, region.w * 2, region.h * 2);
+
+  const out = await upscaleCanvas(crop, {
+    factor: 2,
+    detail,
+    denoise,
+    maxLongEdge: cropSize * 4,
+  });
+  return {
+    before: naive.toDataURL("image/png"),
+    after: out.canvas.toDataURL("image/png"),
+  };
+}
+
+/**
+ * Draggable before/after wipe. Both halves are the same crop at the same
+ * output size, so the seam is a direct A/B — the fastest way to see what the
+ * Detail Engine is actually adding.
+ */
+function CompareWipe({
+  before,
+  after,
+  className,
+  labels = true,
+}: {
+  before: string | null;
+  after: string | null;
+  className?: string;
+  labels?: boolean;
+}) {
+  const [wipe, setWipe] = useState(50);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const dragging = useRef(false);
+
+  const move = (clientX: number) => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setWipe(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "relative touch-none select-none overflow-hidden rounded-md border border-line bg-black/40",
+        before && after ? "cursor-ew-resize" : "",
+        className,
+      )}
+      onPointerDown={(e) => {
+        if (!before || !after) return;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* synthetic / unsupported pointer — dragging still works */
+        }
+        dragging.current = true;
+        move(e.clientX);
+      }}
+      onPointerMove={(e) => {
+        if (dragging.current) move(e.clientX);
+      }}
+      onPointerUp={() => {
+        dragging.current = false;
+      }}
+      onPointerCancel={() => {
+        dragging.current = false;
+      }}
+    >
+      {before && after ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={before}
+            alt="Browser smoothing"
+            className="block w-full"
+            draggable={false}
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={after}
+            alt="Detail Engine"
+            className="absolute inset-0 block h-full w-full"
+            style={{ clipPath: `inset(0 0 0 ${wipe}%)` }}
+            draggable={false}
+          />
+          <div
+            className="pointer-events-none absolute inset-y-0 w-px bg-white/85 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+            style={{ left: `${wipe}%` }}
+          >
+            <span className="absolute left-1/2 top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/60 bg-black/65 backdrop-blur-sm">
+              <ArrowLeftRight className="size-3 text-white/90" />
+            </span>
+          </div>
+          {labels ? (
+            <>
+              <span className="pointer-events-none absolute left-1.5 top-1.5 rounded bg-black/55 px-1 py-0.5 text-[7px] uppercase tracking-[0.14em] text-white/60 backdrop-blur-sm">
+                Browser
+              </span>
+              <span className="pointer-events-none absolute right-1.5 top-1.5 rounded bg-bronze/30 px-1 py-0.5 text-[7px] uppercase tracking-[0.14em] text-bronze-bright backdrop-blur-sm">
+                Engine
+              </span>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <div className="grid aspect-square place-items-center">
+          <LoaderCircle className="size-3.5 animate-spin text-ink-faint" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Level-Up — the Detail Engine control surface, always visible in the Studio.
  * Same planner, quota and kernel as the export dialog; this panel is the
@@ -148,7 +307,11 @@ export function UpscalePanel({
   >(null);
   const [loupe, setLoupe] = useState<{ before: string; after: string } | null>(null);
   const [loupeBusy, setLoupeBusy] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [bigLoupe, setBigLoupe] = useState<{ before: string; after: string } | null>(null);
+  const [bigBusy, setBigBusy] = useState(false);
   const runId = useRef(0);
+  const bigRunId = useRef(0);
 
   useEffect(() => {
     const refresh = () => {
@@ -202,7 +365,7 @@ export function UpscalePanel({
     v === 0 || (!levelLocked && !plans[v].noop && !(v === 4 && fourKRedundant));
   const planned = plans[level];
 
-  /* ── 1:1 loupe: browser bilinear vs the Detail Engine ─────────── */
+  /* ── 1:1 loupe: browser smoothing vs the Detail Engine ────────── */
   useEffect(() => {
     if (!sourceImage || level === 0) {
       setLoupe(null);
@@ -212,45 +375,8 @@ export function UpscalePanel({
     const timer = window.setTimeout(async () => {
       setLoupeBusy(true);
       try {
-        const region = pickDetailRegion(sourceImage, LOUPE_CROP);
-        const crop = document.createElement("canvas");
-        crop.width = region.w;
-        crop.height = region.h;
-        const cctx = crop.getContext("2d");
-        if (!cctx) return;
-        /* native pixels, no downscale — both sides start from the same data */
-        cctx.drawImage(
-          sourceImage,
-          region.x,
-          region.y,
-          region.w,
-          region.h,
-          0,
-          0,
-          region.w,
-          region.h,
-        );
-
-        const naive = document.createElement("canvas");
-        naive.width = region.w * 2;
-        naive.height = region.h * 2;
-        const nctx = naive.getContext("2d");
-        if (!nctx) return;
-        nctx.imageSmoothingEnabled = true;
-        nctx.imageSmoothingQuality = "high";
-        nctx.drawImage(crop, 0, 0, region.w * 2, region.h * 2);
-
-        const out = await upscaleCanvas(crop, {
-          factor: 2,
-          detail,
-          denoise,
-          maxLongEdge: LOUPE_CROP * 4,
-        });
-        if (id !== runId.current) return;
-        setLoupe({
-          before: naive.toDataURL("image/png"),
-          after: out.canvas.toDataURL("image/png"),
-        });
+        const r = await renderLoupe(sourceImage, LOUPE_CROP, detail, denoise);
+        if (id === runId.current && r) setLoupe(r);
       } catch {
         /* loupe is decorative — never block the panel */
       } finally {
@@ -259,6 +385,36 @@ export function UpscalePanel({
     }, 220);
     return () => window.clearTimeout(timer);
   }, [sourceImage, level, detail, denoise]);
+
+  /* ── larger compare render, only while the modal is open ───────── */
+  useEffect(() => {
+    if (!compareOpen || !sourceImage) {
+      setBigLoupe(null);
+      return;
+    }
+    const id = ++bigRunId.current;
+    const timer = window.setTimeout(async () => {
+      setBigBusy(true);
+      try {
+        const r = await renderLoupe(sourceImage, BIG_CROP, detail, denoise);
+        if (id === bigRunId.current && r) setBigLoupe(r);
+      } catch {
+        /* ignore */
+      } finally {
+        if (id === bigRunId.current) setBigBusy(false);
+      }
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [compareOpen, sourceImage, detail, denoise]);
+
+  useEffect(() => {
+    if (!compareOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCompareOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [compareOpen]);
 
   async function quickExport() {
     if (level === 0 || busy) {
@@ -294,8 +450,9 @@ export function UpscalePanel({
   }
 
   return (
-    <Panel
-      title="Level-Up"
+    <>
+      <Panel
+        title="Level-Up"
       side={
         <span
           className={cn(
@@ -386,54 +543,39 @@ export function UpscalePanel({
         </p>
       ) : null}
 
-      {level > 0 && sourceDims ? (
-        <div className="mt-3 space-y-2.5 border-t border-line pt-3">
-          <Slider label="Detail" value={detail} min={0} max={100} onChange={onDetail} accent />
-          <Slider label="Smooth" value={denoise} min={0} max={100} onChange={onDenoise} />
-        </div>
-      ) : null}
-
       {/* ── 1:1 detail loupe ── */}
       {level > 0 && sourceDims ? (
         <div className="mt-3 border-t border-line pt-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="mono-label !text-[8px] !text-ink-faint">
-              NATIVE CROP · 2× ZOOM
+              1:1 CROP · DRAG TO COMPARE
             </span>
             {loupeBusy ? (
               <span className="mono-label !text-[8px] !text-bronze-bright">RENDERING</span>
-            ) : null}
+            ) : (
+              <span className="mono-label !text-[8px] !text-ink-faint">2×</span>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {[
-              { src: loupe?.before, label: "BROWSER" },
-              { src: loupe?.after, label: "ENGINE" },
-            ].map(({ src, label }, i) => (
-              <div key={label} className="relative overflow-hidden rounded-md border border-line bg-black/40">
-                {src ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={src}
-                    alt={`${label} 1:1 crop`}
-                    className="block w-full"
-                    style={{ imageRendering: "auto" }}
-                  />
-                ) : (
-                  <div className="grid aspect-square place-items-center">
-                    <LoaderCircle className="size-3.5 animate-spin text-ink-faint" />
-                  </div>
-                )}
-                <span
-                  className={cn(
-                    "absolute left-1 top-1 rounded px-1 py-0.5 text-[7px] tracking-[0.14em] uppercase backdrop-blur-sm",
-                    i === 1 ? "bg-bronze/25 text-bronze-bright" : "bg-black/55 text-white/60",
-                  )}
-                >
-                  {label}
-                </span>
-              </div>
-            ))}
-          </div>
+          <CompareWipe
+            before={loupe?.before ?? null}
+            after={loupe?.after ?? null}
+            className="mx-auto w-full max-w-[220px]"
+          />
+          <button
+            onClick={() => setCompareOpen(true)}
+            disabled={!loupe}
+            className="btn-ghost mt-2 w-full justify-center !py-2 text-[11px] gap-1.5 disabled:opacity-40"
+          >
+            <Maximize2 className="size-3" />
+            Open full-size compare
+          </button>
+        </div>
+      ) : null}
+
+      {level > 0 && sourceDims ? (
+        <div className="mt-3 space-y-2.5 border-t border-line pt-3">
+          <Slider label="Detail" value={detail} min={0} max={100} onChange={onDetail} accent />
+          <Slider label="Smooth" value={denoise} min={0} max={100} onChange={onDenoise} />
         </div>
       ) : null}
 
@@ -479,5 +621,64 @@ export function UpscalePanel({
         </button>
       </div>
     </Panel>
+
+    {compareOpen
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onClick={() => setCompareOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Detail Engine 1:1 comparison"
+          >
+            <div
+              className="w-full max-w-[520px] rounded-2xl border border-line bg-surface p-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <header className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="mono-label !text-[9px]">DETAIL ENGINE · 1:1</p>
+                  <h2 className="display mt-1 text-lg">Drag the seam</h2>
+                </div>
+                <button
+                  onClick={() => setCompareOpen(false)}
+                  className="p-1.5 text-ink-muted hover:text-ink"
+                  aria-label="Close compare"
+                >
+                  <X className="size-4" />
+                </button>
+              </header>
+
+              <CompareWipe
+                before={bigLoupe?.before ?? null}
+                after={bigLoupe?.after ?? null}
+                className="w-full"
+              />
+
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="mono-label !text-[7px] !text-ink-faint">
+                  {BIG_CROP}px NATIVE CROP → 2× · BOTH SIDES {BIG_CROP * 2}px
+                </p>
+                {bigBusy ? (
+                  <span className="mono-label !text-[7px] !text-bronze-bright">RENDERING</span>
+                ) : null}
+              </div>
+
+              <div className="mt-3 border-t border-line pt-3">
+                <Slider
+                  label="Detail"
+                  value={detail}
+                  min={0}
+                  max={100}
+                  onChange={onDetail}
+                  accent
+                />
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null}
+    </>
   );
 }
