@@ -9,7 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { TIER_LABEL, TIER_MAX_EXPORT, type Tier } from "@/lib/license";
-import { planUpscale } from "@/lib/grade/upscale";
+import { planUpscale, type UpscaleLevel } from "@/lib/grade/upscale";
 import {
   FREE_UPSCALES_PER_24H,
   UPSCALE_EVENT,
@@ -43,7 +43,7 @@ export interface ExportOutcome {
   upscaled: boolean;
 }
 
-type Level = 0 | 2 | 4;
+type Level = UpscaleLevel;
 
 const LEVELS: { value: Level; label: string }[] = [
   { value: 0, label: "Off" },
@@ -56,17 +56,26 @@ export function ExportPanel({
   tier,
   onClose,
   onExport,
+  level,
+  detail,
+  denoise,
+  onLevel,
+  onDetail,
+  onDenoise,
 }: {
   sourceDims: { w: number; h: number } | null;
   tier: Tier;
   onClose: () => void;
   onExport: (t: ExportPayload) => Promise<ExportOutcome>;
+  level: Level;
+  detail: number;
+  denoise: number;
+  onLevel: (v: Level) => void;
+  onDetail: (v: number) => void;
+  onDenoise: (v: number) => void;
 }) {
   const [format, setFormat] = useState<"png" | "jpeg">("jpeg");
   const [quality, setQuality] = useState(92);
-  const [level, setLevel] = useState<Level>(0);
-  const [detail, setDetail] = useState(55);
-  const [denoise, setDenoise] = useState(20);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [status, setStatus] = useState<
@@ -270,7 +279,7 @@ export function ExportPanel({
                   <button
                     key={value}
                     disabled={disabled}
-                    onClick={() => setLevel(value)}
+                    onClick={() => onLevel(value)}
                     title={
                       disabled && value !== 0
                         ? levelLocked
@@ -316,13 +325,13 @@ export function ExportPanel({
                   label="Detail"
                   hint="edge micro-contrast"
                   value={detail}
-                  onChange={setDetail}
+                  onChange={onDetail}
                 />
                 <MiniSlider
                   label="Smooth"
                   hint="denoise before resample"
                   value={denoise}
-                  onChange={setDenoise}
+                  onChange={onDenoise}
                 />
               </div>
             ) : null}

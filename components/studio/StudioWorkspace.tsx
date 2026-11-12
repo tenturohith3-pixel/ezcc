@@ -26,6 +26,7 @@ import {
   Aperture,
   Blend,
   X,
+  Maximize2,
 } from "lucide-react";
 import {
   createStage,
@@ -44,6 +45,8 @@ import { useLicense } from "@/hooks/useLicense";
 import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { canUpscale, recordUpscale } from "@/lib/upscale/quota";
 import type { ExportOutcome, ExportPayload } from "./ExportPanel";
+import { UpscalePanel } from "./UpscalePanel";
+import type { UpscaleLevel } from "@/lib/grade/upscale";
 import {
   loadSettings,
   saveSettings,
@@ -73,6 +76,7 @@ const MOBILE_TABS = [
   ["wheels", "Wheels", Aperture],
   ["hsl", "HSL", Blend],
   ["fx", "FX", Sparkles],
+  ["upscale", "Upscale", Maximize2],
   ["settings", "Setup", Settings2],
 ] as [MobileTab, string, typeof Palette][];
 
@@ -83,7 +87,7 @@ interface SourceState {
   h: number;
 }
 
-type MobileTab = "looks" | "primary" | "wheels" | "hsl" | "fx" | "settings";
+type MobileTab = "looks" | "primary" | "wheels" | "hsl" | "fx" | "upscale" | "settings";
 
 export function StudioWorkspace() {
   const { license, hydrated } = useLicense();
@@ -97,6 +101,9 @@ export function StudioWorkspace() {
   const [cube, setCube] = useState<CubeLut | null>(null);
   const [cubeName, setCubeName] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [level, setLevel] = useState<UpscaleLevel>(0);
+  const [detail, setDetail] = useState(55);
+  const [denoise, setDenoise] = useState(20);
   const [keyOpen, setKeyOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
@@ -402,6 +409,8 @@ export function StudioWorkspace() {
         setMode((m) =>
           m === "split" ? "graded" : m === "graded" ? "original" : "split",
         );
+      } else if (e.key === "u" || e.key === "U") {
+        setLevel((v) => (v === 0 ? 2 : 0));
       } else if (e.key === "r" || e.key === "R") {
         resetAll();
       }
@@ -543,6 +552,21 @@ export function StudioWorkspace() {
             }}
           />
         );
+      case "upscale":
+        return (
+          <UpscalePanel
+            sourceDims={source ? { w: source.w, h: source.h } : null}
+            tier={tier}
+            level={level}
+            detail={detail}
+            denoise={denoise}
+            onLevel={setLevel}
+            onDetail={setDetail}
+            onDenoise={setDenoise}
+            onOpenExport={() => setExportOpen(true)}
+            onQuickExport={runExport}
+          />
+        );
       case "settings":
         return settingsContent;
     }
@@ -651,6 +675,18 @@ export function StudioWorkspace() {
             onSelect={pickLook}
             onIntensity={intensity}
             tier={tier}
+          />
+          <UpscalePanel
+            sourceDims={source ? { w: source.w, h: source.h } : null}
+            tier={tier}
+            level={level}
+            detail={detail}
+            denoise={denoise}
+            onLevel={setLevel}
+            onDetail={setDetail}
+            onDenoise={setDenoise}
+            onOpenExport={() => setExportOpen(true)}
+            onQuickExport={runExport}
           />
         </aside>
 
@@ -792,7 +828,7 @@ export function StudioWorkspace() {
             </span>
             <div className="flex items-center gap-3">
               <span className="mono-label !text-[9px] hidden sm:block">
-                B SPLIT · E EXPORT · ⌘Z UNDO
+                B SPLIT · E EXPORT · U LEVEL-UP · ⌘Z UNDO
               </span>
               <span className="mono-label !text-[9px] text-bronze-bright">
                 MAX {(TIER_MAX_EXPORT[tier] ?? 1920) >= 7680 ? "SOURCE" : `${TIER_MAX_EXPORT[tier] ?? 1920}PX`}
@@ -892,7 +928,7 @@ export function StudioWorkspace() {
           ) : null}
 
           {/* the dock itself */}
-          <div className="grid grid-cols-6">
+          <div className="grid grid-cols-7">
             {MOBILE_TABS.map(([id, label, Icon]) => (
               <button
                 key={id}
@@ -942,6 +978,12 @@ export function StudioWorkspace() {
           tier={tier}
           onClose={() => setExportOpen(false)}
           onExport={runExport}
+          level={level}
+          detail={detail}
+          denoise={denoise}
+          onLevel={setLevel}
+          onDetail={setDetail}
+          onDenoise={setDenoise}
         />
       ) : null}
       {keyOpen ? <KeyEntryModal onClose={() => setKeyOpen(false)} /> : null}

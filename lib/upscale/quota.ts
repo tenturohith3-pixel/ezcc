@@ -75,8 +75,11 @@ export function recordUpscale(now = Date.now()): void {
 
 export function formatQuotaWindow(ms: number): string {
   if (ms <= 0) return "now";
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.ceil((ms % 3_600_000) / 60_000);
+  /* round up to whole minutes first, so 23h 59m 57s reads "24h 0m"
+     instead of "23h 60m" */
+  const total = Math.ceil(ms / 60_000);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
   if (h >= 1) return `${h}h ${m}m`;
   return `${m}m`;
 }

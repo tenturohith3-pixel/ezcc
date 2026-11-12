@@ -16,6 +16,9 @@ import { upscaleJSData } from "./upscale-js";
 
 const BAND_ROWS = 96;
 
+/** 0 = off, 2/4 = level-up factor. Shared by the Studio panel + export dialog. */
+export type UpscaleLevel = 0 | 2 | 4;
+
 export interface UpscaleOptions {
   factor: 2 | 4;
   detail: number; // 0..100 micro-contrast
