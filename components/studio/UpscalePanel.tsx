@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Download, LoaderCircle, Sparkles } from "lucide-react";
-import { TIER_LABEL, TIER_MAX_EXPORT, type Tier } from "@/lib/license";
-import { planUpscale, type UpscaleLevel } from "@/lib/grade/upscale";
+import { TIER_LABEL, TIER_MAX_EXPORT, TIER_MAX_UPSCALE, type Tier } from "@/lib/license";
+import { planUpscale, upscaleCanvas, type UpscaleLevel } from "@/lib/grade/upscale";
 import {
   FREE_UPSCALES_PER_24H,
   UPSCALE_EVENT,
@@ -21,13 +21,98 @@ const LEVELS: { value: UpscaleLevel; label: string }[] = [
   { value: 4, label: "×4" },
 ];
 
+/** Crop size for the 1:1 loupe — a native 110px window shown at 2×. */
+const LOUPE_CROP = 110;
+
+/**
+ * Pick the most detailed `cropSize` window of the source so the loupe never
+ * lands on a flat patch — on smooth skies or gradients even a great upscaler
+ * looks like it does nothing. Uses an integral image of gradient energy over
+ * a small proxy, so the scan is cheap even for huge sources.
+ */
+function pickDetailRegion(
+  img: HTMLImageElement,
+  cropSize: number,
+): { x: number; y: number; w: number; h: number } {
+  const sw = img.naturalWidth || img.width;
+  const sh = img.naturalHeight || img.height;
+  const w = Math.min(cropSize, sw);
+  const h = Math.min(cropSize, sh);
+  if (w >= sw && h >= sh) return { x: 0, y: 0, w, h };
+
+  const proxyW = Math.min(240, sw);
+  const scale = proxyW / sw;
+  const proxyH = Math.max(1, Math.round(sh * scale));
+  const proxy = document.createElement("canvas");
+  proxy.width = proxyW;
+  proxy.height = proxyH;
+  const pctx = proxy.getContext("2d", { willReadFrequently: true });
+  if (!pctx) return { x: 0, y: 0, w, h };
+  pctx.drawImage(img, 0, 0, proxyW, proxyH);
+  const d = pctx.getImageData(0, 0, proxyW, proxyH).data;
+
+  /* integral image of |dx| + |dy| on luma */
+  const iw = proxyW + 1;
+  const integ = new Float64Array(iw * (proxyH + 1));
+  const luma = (x: number, y: number) => {
+    const i = (y * proxyW + x) * 4;
+    return 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!;
+  };
+  for (let y = 0; y < proxyH; y++) {
+    let rowSum = 0;
+    for (let x = 0; x < proxyW; x++) {
+      const l = luma(x, y);
+      const gx = Math.abs(l - (x > 0 ? luma(x - 1, y) : l));
+      const gy = Math.abs(l - (y > 0 ? luma(x, y - 1) : l));
+      rowSum += gx + gy;
+      integ[(y + 1) * iw + (x + 1)] =
+        integ[y * iw + (x + 1)]! + rowSum;
+    }
+  }
+
+  const bw = Math.max(1, Math.round(w * scale));
+  const bh = Math.max(1, Math.round(h * scale));
+  const stepX = Math.max(1, Math.round(bw / 4));
+  const stepY = Math.max(1, Math.round(bh / 4));
+  let best = -1;
+  let bx = 0;
+  let by = 0;
+  for (let y = 0; y + bh <= proxyH; y += stepY) {
+    for (let x = 0; x + bw <= proxyW; x += stepX) {
+      const x2 = x + bw;
+      const y2 = y + bh;
+      const sum =
+        integ[y2 * iw + x2]! -
+        integ[y * iw + x2]! -
+        integ[y2 * iw + x]! +
+        integ[y * iw + x]!;
+      if (sum > best) {
+        best = sum;
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  return {
+    x: Math.max(0, Math.min(sw - w, Math.round(bx / scale))),
+    y: Math.max(0, Math.min(sh - h, Math.round(by / scale))),
+    w,
+    h,
+  };
+}
+
 /**
  * Level-Up — the Detail Engine control surface, always visible in the Studio.
  * Same planner, quota and kernel as the export dialog; this panel is the
  * front door so upscaling isn't buried behind Export.
+ *
+ * The loupe is the point: a browser bilinear stretch and the engine render the
+ * same 1:1 crop at the same pixel size, so the difference is visible without
+ * exporting anything.
  */
 export function UpscalePanel({
   sourceDims,
+  sourceImage,
   tier,
   level,
   detail,
@@ -39,6 +124,7 @@ export function UpscalePanel({
   onQuickExport,
 }: {
   sourceDims: { w: number; h: number } | null;
+  sourceImage: HTMLImageElement | null;
   tier: Tier;
   level: UpscaleLevel;
   detail: number;
@@ -51,6 +137,7 @@ export function UpscalePanel({
 }) {
   const paid = tier !== "basic";
   const maxLong = TIER_MAX_EXPORT[tier] ?? 1920;
+  const upMaxLong = TIER_MAX_UPSCALE[tier] ?? 2560;
 
   const [remaining, setRemaining] = useState(FREE_UPSCALES_PER_24H);
   const [nextIn, setNextIn] = useState(0);
@@ -59,6 +146,9 @@ export function UpscalePanel({
   const [status, setStatus] = useState<
     { kind: "ok" | "err"; msg: string } | null
   >(null);
+  const [loupe, setLoupe] = useState<{ before: string; after: string } | null>(null);
+  const [loupeBusy, setLoupeBusy] = useState(false);
+  const runId = useRef(0);
 
   useEffect(() => {
     const refresh = () => {
@@ -93,19 +183,82 @@ export function UpscalePanel({
       0: { w: base.w, h: base.h, scale: 1, limited: false, noop: true },
       2:
         base.w > 0
-          ? planUpscale(base.w, base.h, 2, maxLong)
+          ? planUpscale(base.w, base.h, 2, upMaxLong)
           : { w: 0, h: 0, scale: 1, limited: false, noop: true },
       4:
         base.w > 0
-          ? planUpscale(base.w, base.h, 4, maxLong)
+          ? planUpscale(base.w, base.h, 4, upMaxLong)
           : { w: 0, h: 0, scale: 1, limited: false, noop: true },
     }),
-    [base.w, base.h, maxLong],
+    [base.w, base.h, upMaxLong],
   );
 
   const levelLocked = !paid && remaining <= 0;
-  const canLevel = (v: UpscaleLevel) => v === 0 || (!levelLocked && !plans[v].noop);
+  /* On free, ×4 clamps to the same 2K as ×2 — offering it would silently
+     produce a duplicate file. Disable it and point at Pro instead. */
+  const fourKRedundant =
+    plans[2].w > 0 && plans[4].w > 0 && plans[4].w <= plans[2].w;
+  const canLevel = (v: UpscaleLevel) =>
+    v === 0 || (!levelLocked && !plans[v].noop && !(v === 4 && fourKRedundant));
   const planned = plans[level];
+
+  /* ── 1:1 loupe: browser bilinear vs the Detail Engine ─────────── */
+  useEffect(() => {
+    if (!sourceImage || level === 0) {
+      setLoupe(null);
+      return;
+    }
+    const id = ++runId.current;
+    const timer = window.setTimeout(async () => {
+      setLoupeBusy(true);
+      try {
+        const region = pickDetailRegion(sourceImage, LOUPE_CROP);
+        const crop = document.createElement("canvas");
+        crop.width = region.w;
+        crop.height = region.h;
+        const cctx = crop.getContext("2d");
+        if (!cctx) return;
+        /* native pixels, no downscale — both sides start from the same data */
+        cctx.drawImage(
+          sourceImage,
+          region.x,
+          region.y,
+          region.w,
+          region.h,
+          0,
+          0,
+          region.w,
+          region.h,
+        );
+
+        const naive = document.createElement("canvas");
+        naive.width = region.w * 2;
+        naive.height = region.h * 2;
+        const nctx = naive.getContext("2d");
+        if (!nctx) return;
+        nctx.imageSmoothingEnabled = true;
+        nctx.imageSmoothingQuality = "high";
+        nctx.drawImage(crop, 0, 0, region.w * 2, region.h * 2);
+
+        const out = await upscaleCanvas(crop, {
+          factor: 2,
+          detail,
+          denoise,
+          maxLongEdge: LOUPE_CROP * 4,
+        });
+        if (id !== runId.current) return;
+        setLoupe({
+          before: naive.toDataURL("image/png"),
+          after: out.canvas.toDataURL("image/png"),
+        });
+      } catch {
+        /* loupe is decorative — never block the panel */
+      } finally {
+        if (id === runId.current) setLoupeBusy(false);
+      }
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [sourceImage, level, detail, denoise]);
 
   async function quickExport() {
     if (level === 0 || busy) {
@@ -118,9 +271,9 @@ export function UpscalePanel({
     try {
       const out = await onQuickExport({
         format: "jpeg",
-        quality: 92,
+        quality: 95,
         maxLongEdge: maxLong,
-        upscale: { factor: level, detail, denoise, maxLongEdge: maxLong },
+        upscale: { factor: level, detail, denoise, maxLongEdge: upMaxLong },
         onProgress: setProgress,
       });
       setStatus({
@@ -159,7 +312,7 @@ export function UpscalePanel({
       }
     >
       <p className="mono-label !text-[8px] !text-ink-faint -mt-2 mb-3">
-        DETAIL ENGINE — LANCZOS3 IN LINEAR LIGHT
+        DETAIL ENGINE — LANCZOS3 + MICRO-CONTRAST
       </p>
 
       {sourceDims ? (
@@ -169,6 +322,12 @@ export function UpscalePanel({
           <span className={level > 0 ? "text-bronze-bright" : "text-ink-faint"}>
             {planned.w} × {planned.h}
           </span>
+          {level > 0 ? (
+            <span className="text-ink-faint">
+              {" "}
+              · {planned.w >= 3800 ? "4K" : planned.w >= 2500 ? "2K" : "HD"}
+            </span>
+          ) : null}
         </p>
       ) : (
         <p className="text-[12px] text-ink-faint mb-3">
@@ -179,9 +338,15 @@ export function UpscalePanel({
       <div className="grid grid-cols-3 gap-1.5">
         {LEVELS.map(({ value, label }) => {
           const plan = plans[value];
+          const redundant = value === 4 && fourKRedundant;
           const disabled = !sourceDims || !canLevel(value);
-          const dims =
-            plan.w > 0 ? `${plan.w} × ${plan.h}` : value === 0 ? "native" : "—";
+          const dims = redundant
+            ? "PRO · 4K"
+            : plan.w > 0
+              ? `${plan.w} × ${plan.h}`
+              : value === 0
+                ? "native"
+                : "—";
           return (
             <button
               key={value}
@@ -191,7 +356,9 @@ export function UpscalePanel({
                 disabled && value !== 0 && sourceDims
                   ? levelLocked
                     ? "Free level-ups used — resets on a rolling 24h window"
-                    : "Already at your export ceiling"
+                    : redundant
+                      ? `4K level-ups need Pro — ×4 would match ×2 at your ${upMaxLong}px ceiling`
+                      : "Already at your level-up ceiling"
                   : undefined
               }
               className={cn(
@@ -219,10 +386,54 @@ export function UpscalePanel({
         </p>
       ) : null}
 
-      {sourceDims && level > 0 ? (
+      {level > 0 && sourceDims ? (
         <div className="mt-3 space-y-2.5 border-t border-line pt-3">
           <Slider label="Detail" value={detail} min={0} max={100} onChange={onDetail} accent />
           <Slider label="Smooth" value={denoise} min={0} max={100} onChange={onDenoise} />
+        </div>
+      ) : null}
+
+      {/* ── 1:1 detail loupe ── */}
+      {level > 0 && sourceDims ? (
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="mono-label !text-[8px] !text-ink-faint">
+              NATIVE CROP · 2× ZOOM
+            </span>
+            {loupeBusy ? (
+              <span className="mono-label !text-[8px] !text-bronze-bright">RENDERING</span>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              { src: loupe?.before, label: "BROWSER" },
+              { src: loupe?.after, label: "ENGINE" },
+            ].map(({ src, label }, i) => (
+              <div key={label} className="relative overflow-hidden rounded-md border border-line bg-black/40">
+                {src ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={src}
+                    alt={`${label} 1:1 crop`}
+                    className="block w-full"
+                    style={{ imageRendering: "auto" }}
+                  />
+                ) : (
+                  <div className="grid aspect-square place-items-center">
+                    <LoaderCircle className="size-3.5 animate-spin text-ink-faint" />
+                  </div>
+                )}
+                <span
+                  className={cn(
+                    "absolute left-1 top-1 rounded px-1 py-0.5 text-[7px] tracking-[0.14em] uppercase backdrop-blur-sm",
+                    i === 1 ? "bg-bronze/25 text-bronze-bright" : "bg-black/55 text-white/60",
+                  )}
+                >
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 

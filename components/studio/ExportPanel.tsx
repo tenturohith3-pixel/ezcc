@@ -8,7 +8,7 @@ import {
   LoaderCircle,
   Sparkles,
 } from "lucide-react";
-import { TIER_LABEL, TIER_MAX_EXPORT, type Tier } from "@/lib/license";
+import { TIER_LABEL, TIER_MAX_EXPORT, TIER_MAX_UPSCALE, type Tier } from "@/lib/license";
 import { planUpscale, type UpscaleLevel } from "@/lib/grade/upscale";
 import {
   FREE_UPSCALES_PER_24H,
@@ -105,6 +105,8 @@ export function ExportPanel({
   }, [tier]);
 
   const maxLong = TIER_MAX_EXPORT[tier] ?? 1920;
+  /* level-up has its own, higher ceiling — see TIER_MAX_UPSCALE */
+  const upMaxLong = TIER_MAX_UPSCALE[tier] ?? 2560;
   const srcLong = useMemo(() => {
     if (!sourceDims) return 0;
     return Math.max(sourceDims.w, sourceDims.h);
@@ -174,20 +176,25 @@ export function ExportPanel({
         0: { w: base.w, h: base.h, scale: 1, limited: false, noop: true },
         2:
           base.w > 0
-            ? planUpscale(base.w, base.h, 2, maxLong)
+            ? planUpscale(base.w, base.h, 2, upMaxLong)
             : { w: 0, h: 0, scale: 1, limited: false, noop: true },
         4:
           base.w > 0
-            ? planUpscale(base.w, base.h, 4, maxLong)
+            ? planUpscale(base.w, base.h, 4, upMaxLong)
             : { w: 0, h: 0, scale: 1, limited: false, noop: true },
       }) as const,
-    [base.w, base.h, maxLong],
+    [base.w, base.h, upMaxLong],
   );
 
   const levelLocked = !paid && remaining <= 0;
   const planned = plans[level];
+  /* ×4 on free clamps to the same 2K as ×2 — disable it rather than
+     handing back a byte-identical file under a different name. */
+  const fourKRedundant =
+    plans[2].w > 0 && plans[4].w > 0 && plans[4].w <= plans[2].w;
   const canLevel = (value: Level) =>
-    value === 0 || (!levelLocked && !plans[value].noop);
+    value === 0 ||
+    (!levelLocked && !plans[value].noop && !(value === 4 && fourKRedundant));
 
   return (
     <div className="fixed inset-0 z-[70] grid place-items-center px-4">
@@ -272,9 +279,15 @@ export function ExportPanel({
             <div className="grid grid-cols-3 gap-1.5">
               {LEVELS.map(({ value, label }) => {
                 const plan = plans[value];
+                const redundant = value === 4 && fourKRedundant;
                 const disabled = !canLevel(value);
-                const dims =
-                  plan.w > 0 ? `${plan.w} × ${plan.h}` : value === 0 ? "native" : "—";
+                const dims = redundant
+                  ? "PRO · 4K"
+                  : plan.w > 0
+                    ? `${plan.w} × ${plan.h}`
+                    : value === 0
+                      ? "native"
+                      : "—";
                 return (
                   <button
                     key={value}
@@ -284,7 +297,9 @@ export function ExportPanel({
                       disabled && value !== 0
                         ? levelLocked
                           ? "Free level-ups used — resets on a rolling 24h window"
-                          : "Already at your export ceiling"
+                          : redundant
+                            ? `4K level-ups need Pro — ×4 would match ×2 at your ${upMaxLong}px ceiling`
+                            : "Already at your export ceiling"
                         : undefined
                     }
                     className={
@@ -314,8 +329,8 @@ export function ExportPanel({
             {base.w > 0 && plans[2].noop && plans[4].noop ? (
               <p className="mono-label !text-[7px] mt-2 !text-ink-faint">
                 {paid
-                  ? `ALREADY AT YOUR ${maxLong}PX CEILING`
-                  : `FREE CEILING IS ${maxLong}PX — PRO UNLOCKS 4K LEVEL-UPS`}
+                  ? `ALREADY AT YOUR ${upMaxLong}PX LEVEL-UP CEILING`
+                  : `FREE LEVEL-UP REACHES ${upMaxLong}PX — PRO UNLOCKS 4K`}
               </p>
             ) : null}
 
@@ -415,7 +430,7 @@ export function ExportPanel({
                           factor: level === 4 ? 4 : 2,
                           detail,
                           denoise,
-                          maxLongEdge: maxLong,
+                          maxLongEdge: upMaxLong,
                         }
                       : null,
                   onProgress: setProgress,

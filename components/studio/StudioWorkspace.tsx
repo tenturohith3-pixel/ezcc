@@ -102,7 +102,7 @@ export function StudioWorkspace() {
   const [cubeName, setCubeName] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [level, setLevel] = useState<UpscaleLevel>(0);
-  const [detail, setDetail] = useState(55);
+  const [detail, setDetail] = useState(65);
   const [denoise, setDenoise] = useState(20);
   const [keyOpen, setKeyOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -556,6 +556,7 @@ export function StudioWorkspace() {
         return (
           <UpscalePanel
             sourceDims={source ? { w: source.w, h: source.h } : null}
+            sourceImage={source?.img ?? null}
             tier={tier}
             level={level}
             detail={detail}
@@ -678,6 +679,7 @@ export function StudioWorkspace() {
           />
           <UpscalePanel
             sourceDims={source ? { w: source.w, h: source.h } : null}
+            sourceImage={source?.img ?? null}
             tier={tier}
             level={level}
             detail={detail}

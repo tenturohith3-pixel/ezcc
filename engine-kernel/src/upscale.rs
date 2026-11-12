@@ -303,7 +303,7 @@ impl Up {
         let r0 = clamp_y(ey as i32 - 1);
         let r1 = clamp_y(ey as i32);
         let r2 = clamp_y(ey as i32 + 1);
-        let k = (self.detail / 100.0) * 1.15;
+        let k = (self.detail / 100.0) * 2.2;
 
         /* vertical blur into self.blur */
         {
@@ -339,7 +339,27 @@ impl Up {
                     + 2.0 * blur[xc + c] as f64
                     + blur[xr + c] as f64)
                     * 0.25) as f64;
-                let v = raw + (raw - hb) * k;
+                let mut v = raw + (raw - hb) * k;
+
+                /* Halo guard — keep the sharpened pixel inside the local
+                   3×3 range plus a small margin. Strong micro-contrast
+                   without white/black fringes on hard edges. */
+                let mut lo = f64::MAX;
+                let mut hi = f64::MIN;
+                for rr in [r0, r1, r2] {
+                    for cc in [xl, xc, xr] {
+                        let n = ring[rr * stride + cc + c] as f64;
+                        if n < lo {
+                            lo = n;
+                        }
+                        if n > hi {
+                            hi = n;
+                        }
+                    }
+                }
+                let margin = 0.045;
+                v = v.clamp(lo - margin, hi + margin);
+
                 let px = row_off + o * 4 + c;
                 dst[px] = out_srgb(v, out_lut);
             }

@@ -194,7 +194,7 @@ export function upscaleJSData(
   };
 
   const out = new Uint8ClampedArray(dstW * dstH * 4);
-  const kk = (Math.min(100, Math.max(0, detail)) / 100) * 1.15;
+  const kk = (Math.min(100, Math.max(0, detail)) / 100) * 2.2;
 
   const emitRow = (ey: number) => {
     const r0 = Math.max(0, Math.min(dstH - 1, ey - 1)) % 3;
@@ -220,7 +220,20 @@ export function upscaleJSData(
         const raw = ring[r1 * stride + xc + c]!;
         const hb =
           (blur[xl + c]! + 2 * blur[xc + c]! + blur[xr + c]!) * 0.25;
-        const val = raw + (raw - hb) * kk;
+        let val = raw + (raw - hb) * kk;
+
+        /* halo guard — same as the Rust kernel */
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const rr of [r0, r1, r2]) {
+          for (const cc of [xl, xc, xr]) {
+            const n = ring[rr * stride + cc + c]!;
+            if (n < lo) lo = n;
+            if (n > hi) hi = n;
+          }
+        }
+        val = Math.min(hi + 0.045, Math.max(lo - 0.045, val));
+
         const idx = Math.min(
           LUT_N - 1,
           Math.floor(Math.min(1, Math.max(0, val)) * (LUT_N - 1) + 0.5),

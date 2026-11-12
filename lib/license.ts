@@ -33,6 +33,21 @@ export const TIER_MAX_EXPORT: Record<Tier, number> = {
   lifetime: 7680,
 };
 
+/**
+ * Level-Up ceiling — deliberately higher than the export ceiling.
+ * A straight export is the plan's resolution; a level-up is the metered
+ * premium action, so free gets 2K (a 720p frame becomes a true 2560×1440)
+ * and paid reaches 4K/source. Without this, every free level-up clamped to
+ * 1920 and ×2 and ×4 produced identical files.
+ */
+export const TIER_MAX_UPSCALE: Record<Tier, number> = {
+  basic: 2560,
+  bundle: 2560,
+  pro: 3840,
+  studio: 3840,
+  lifetime: 7680,
+};
+
 export interface StoredLicense {
   key: string;
   tier: Tier;
