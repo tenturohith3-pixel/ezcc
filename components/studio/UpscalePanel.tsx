@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeftRight,
   ArrowUpRight,
+  BrainCircuit,
+  Cpu,
   Download,
   LoaderCircle,
   Maximize2,
@@ -12,7 +14,13 @@ import {
   X,
 } from "lucide-react";
 import { TIER_LABEL, TIER_MAX_EXPORT, TIER_MAX_UPSCALE, type Tier } from "@/lib/license";
-import { planUpscale, upscaleCanvas, type UpscaleLevel } from "@/lib/grade/upscale";
+import {
+  planUpscale,
+  upscaleCanvas,
+  type UpscaleEngine,
+  type UpscaleLevel,
+} from "@/lib/grade/upscale";
+import { abortNeural, warmNeural } from "@/lib/grade/neural";
 import {
   FREE_UPSCALES_PER_24H,
   UPSCALE_EVENT,
@@ -119,6 +127,7 @@ async function renderLoupe(
   cropSize: number,
   detail: number,
   denoise: number,
+  engine: UpscaleEngine,
 ): Promise<{ before: string; after: string } | null> {
   const region = pickDetailRegion(image, cropSize);
   const crop = document.createElement("canvas");
@@ -152,6 +161,7 @@ async function renderLoupe(
     factor: 2,
     detail,
     denoise,
+    engine,
     maxLongEdge: cropSize * 4,
   });
   return {
@@ -170,11 +180,13 @@ function CompareWipe({
   after,
   className,
   labels = true,
+  afterLabel = "Engine",
 }: {
   before: string | null;
   after: string | null;
   className?: string;
   labels?: boolean;
+  afterLabel?: string;
 }) {
   const [wipe, setWipe] = useState(50);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -246,7 +258,7 @@ function CompareWipe({
                 Browser
               </span>
               <span className="pointer-events-none absolute right-1.5 top-1.5 rounded bg-bronze/30 px-1 py-0.5 text-[7px] uppercase tracking-[0.14em] text-bronze-bright backdrop-blur-sm">
-                Engine
+                {afterLabel}
               </span>
             </>
           ) : null}
@@ -276,9 +288,11 @@ export function UpscalePanel({
   level,
   detail,
   denoise,
+  engine,
   onLevel,
   onDetail,
   onDenoise,
+  onEngine,
   onOpenExport,
   onQuickExport,
 }: {
@@ -288,11 +302,16 @@ export function UpscalePanel({
   level: UpscaleLevel;
   detail: number;
   denoise: number;
+  engine: UpscaleEngine;
   onLevel: (v: UpscaleLevel) => void;
   onDetail: (v: number) => void;
   onDenoise: (v: number) => void;
+  onEngine: (v: UpscaleEngine) => void;
   onOpenExport: () => void;
-  onQuickExport: (payload: ExportPayload) => Promise<ExportOutcome>;
+  onQuickExport: (
+    payload: ExportPayload,
+    signal?: AbortSignal,
+  ) => Promise<ExportOutcome>;
 }) {
   const paid = tier !== "basic";
   const maxLong = TIER_MAX_EXPORT[tier] ?? 1920;
@@ -312,6 +331,8 @@ export function UpscalePanel({
   const [bigBusy, setBigBusy] = useState(false);
   const runId = useRef(0);
   const bigRunId = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const neural = engine === "neural";
 
   useEffect(() => {
     const refresh = () => {
@@ -365,7 +386,12 @@ export function UpscalePanel({
     v === 0 || (!levelLocked && !plans[v].noop && !(v === 4 && fourKRedundant));
   const planned = plans[level];
 
-  /* ── 1:1 loupe: browser smoothing vs the Detail Engine ────────── */
+  /* ── 1:1 loupe: browser smoothing vs the selected engine ───────── */
+  useEffect(() => {
+    setLoupe(null);
+    setBigLoupe(null);
+  }, [engine]);
+
   useEffect(() => {
     if (!sourceImage || level === 0) {
       setLoupe(null);
@@ -375,7 +401,14 @@ export function UpscalePanel({
     const timer = window.setTimeout(async () => {
       setLoupeBusy(true);
       try {
-        const r = await renderLoupe(sourceImage, LOUPE_CROP, detail, denoise);
+        if (engine === "neural") await warmNeural();
+        const r = await renderLoupe(
+          sourceImage,
+          LOUPE_CROP,
+          detail,
+          denoise,
+          engine,
+        );
         if (id === runId.current && r) setLoupe(r);
       } catch {
         /* loupe is decorative — never block the panel */
@@ -384,7 +417,7 @@ export function UpscalePanel({
       }
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [sourceImage, level, detail, denoise]);
+  }, [sourceImage, level, detail, denoise, engine]);
 
   /* ── larger compare render, only while the modal is open ───────── */
   useEffect(() => {
@@ -396,7 +429,14 @@ export function UpscalePanel({
     const timer = window.setTimeout(async () => {
       setBigBusy(true);
       try {
-        const r = await renderLoupe(sourceImage, BIG_CROP, detail, denoise);
+        if (engine === "neural") await warmNeural();
+        const r = await renderLoupe(
+          sourceImage,
+          BIG_CROP,
+          detail,
+          denoise,
+          engine,
+        );
         if (id === bigRunId.current && r) setBigLoupe(r);
       } catch {
         /* ignore */
@@ -405,7 +445,7 @@ export function UpscalePanel({
       }
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [compareOpen, sourceImage, detail, denoise]);
+  }, [compareOpen, sourceImage, detail, denoise, engine]);
 
   useEffect(() => {
     if (!compareOpen) return;
@@ -421,32 +461,63 @@ export function UpscalePanel({
       onOpenExport();
       return;
     }
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setProgress(0);
     setStatus(null);
     try {
-      const out = await onQuickExport({
-        format: "jpeg",
-        quality: 95,
-        maxLongEdge: maxLong,
-        upscale: { factor: level, detail, denoise, maxLongEdge: upMaxLong },
-        onProgress: setProgress,
-      });
+      const out = await onQuickExport(
+        {
+          format: "jpeg",
+          quality: 95,
+          maxLongEdge: maxLong,
+          upscale: {
+            factor: level,
+            detail,
+            denoise,
+            maxLongEdge: upMaxLong,
+            engine,
+          },
+          onProgress: setProgress,
+        },
+        controller.signal,
+      );
       setStatus({
         kind: "ok",
         msg: out.upscaled
-          ? `Exported ${out.w} × ${out.h} — leveled up`
+          ? `Exported ${out.w} × ${out.h} — ${
+              out.fellBack
+                ? "AI unavailable, Detail Engine used"
+                : out.engine === "neural"
+                  ? "neural level-up"
+                  : "leveled up"
+            }`
           : `Exported ${out.w} × ${out.h}`,
       });
     } catch (err) {
+      const aborted =
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && /abort/i.test(err.message));
       setStatus({
         kind: "err",
-        msg: err instanceof Error ? err.message : "Level-up failed.",
+        msg: aborted
+          ? "Level-up cancelled."
+          : err instanceof Error
+            ? err.message
+            : "Level-up failed.",
       });
     } finally {
+      abortRef.current = null;
       setBusy(false);
       setProgress(null);
     }
+  }
+
+  function cancelRun() {
+    abortRef.current?.abort();
+    abortNeural();
+    setStatus({ kind: "err", msg: "Cancelling…" });
   }
 
   return (
@@ -469,8 +540,55 @@ export function UpscalePanel({
       }
     >
       <p className="mono-label !text-[8px] !text-ink-faint -mt-2 mb-3">
-        DETAIL ENGINE — LANCZOS3 + MICRO-CONTRAST
+        {neural
+          ? "NEURAL ENGINE — ESRGAN ×2 + EDGE POLISH"
+          : "DETAIL ENGINE — LANCZOS3 + MICRO-CONTRAST"}
       </p>
+
+      {/* ── engine switch: classical vs learned ── */}
+      <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-xl border border-line bg-bg/40 p-1">
+        <button
+          onClick={() => onEngine("detail")}
+          disabled={busy}
+          className={cn(
+            "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] transition-colors disabled:opacity-50",
+            !neural
+              ? "bg-bronze/15 text-bronze-bright shadow-[inset_0_0_0_1px_rgba(232,207,162,0.25)]"
+              : "text-ink-muted hover:text-ink",
+          )}
+        >
+          <Cpu className="size-3.5" />
+          Detail
+        </button>
+        <button
+          onClick={() => {
+            onEngine("neural");
+            void warmNeural().catch(() => {
+              /* the run will surface the real error */
+            });
+          }}
+          disabled={busy}
+          className={cn(
+            "upscale-bounce flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] transition-colors disabled:opacity-50",
+            neural
+              ? "bg-bronze/15 text-bronze-bright shadow-[inset_0_0_0_1px_rgba(232,207,162,0.25)]"
+              : "text-ink-muted hover:text-ink",
+          )}
+        >
+          <BrainCircuit className="size-3.5" />
+          Neural AI
+          <span className="rounded bg-bronze/25 px-1 py-px text-[7px] tracking-[0.1em] text-bronze-bright">
+            AI
+          </span>
+        </button>
+      </div>
+
+      {neural ? (
+        <p className="mono-label !text-[7px] !text-ink-faint -mt-1 mb-3 leading-relaxed">
+          LEARNED SUPER-RESOLUTION — RECONSTRUCTS TEXTURE, RUNS ON YOUR GPU,
+          FIRST RUN LOADS A 0.9 MB MODEL
+        </p>
+      ) : null}
 
       {sourceDims ? (
         <p className="mono-num text-[11px] text-ink-muted mb-3">
@@ -548,10 +666,12 @@ export function UpscalePanel({
         <div className="mt-3 border-t border-line pt-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="mono-label !text-[8px] !text-ink-faint">
-              1:1 CROP · DRAG TO COMPARE
+              {neural ? "AI 1:1 CROP" : "1:1 CROP"} · DRAG TO COMPARE
             </span>
             {loupeBusy ? (
-              <span className="mono-label !text-[8px] !text-bronze-bright">RENDERING</span>
+              <span className="mono-label !text-[8px] !text-bronze-bright">
+                {neural ? "AI RENDERING" : "RENDERING"}
+              </span>
             ) : (
               <span className="mono-label !text-[8px] !text-ink-faint">2×</span>
             )}
@@ -560,6 +680,7 @@ export function UpscalePanel({
             before={loupe?.before ?? null}
             after={loupe?.after ?? null}
             className="mx-auto w-full max-w-[220px]"
+            afterLabel={neural ? "AI" : "Engine"}
           />
           <button
             onClick={() => setCompareOpen(true)}
@@ -574,8 +695,27 @@ export function UpscalePanel({
 
       {level > 0 && sourceDims ? (
         <div className="mt-3 space-y-2.5 border-t border-line pt-3">
-          <Slider label="Detail" value={detail} min={0} max={100} onChange={onDetail} accent />
-          <Slider label="Smooth" value={denoise} min={0} max={100} onChange={onDenoise} />
+          <Slider
+            label={neural ? "AI Detail" : "Detail"}
+            value={detail}
+            min={0}
+            max={100}
+            onChange={onDetail}
+            accent
+          />
+          {neural ? (
+            <p className="mono-label !text-[7px] !text-ink-faint leading-relaxed">
+              EDGE POLISH ON THE MODEL OUTPUT — 0 KEEPS THE RAW NEURAL FRAME
+            </p>
+          ) : (
+            <Slider
+              label="Smooth"
+              value={denoise}
+              min={0}
+              max={100}
+              onChange={onDenoise}
+            />
+          )}
         </div>
       ) : null}
 
@@ -605,12 +745,22 @@ export function UpscalePanel({
           )}
           {busy
             ? progress !== null && progress > 0
-              ? `Leveling up — ${Math.round(progress * 100)}%`
-              : "Leveling up…"
+              ? `${neural ? "AI leveling up" : "Leveling up"} — ${Math.round(progress * 100)}%`
+              : neural
+                ? "Warming neural engine…"
+                : "Leveling up…"
             : level > 0
-              ? `Level up ${level}× & download`
+              ? `${neural ? "AI level up" : "Level up"} ${level}× & download`
               : "Export options"}
         </button>
+        {busy ? (
+          <button
+            onClick={cancelRun}
+            className="mono-label !text-[9px] text-ink-faint transition-colors hover:text-[#f05545]"
+          >
+            CANCEL {neural ? "AI RUN" : "LEVEL-UP"}
+          </button>
+        ) : null}
         <button
           onClick={onOpenExport}
           disabled={!sourceDims}
@@ -629,7 +779,11 @@ export function UpscalePanel({
             onClick={() => setCompareOpen(false)}
             role="dialog"
             aria-modal="true"
-            aria-label="Detail Engine 1:1 comparison"
+            aria-label={
+              neural
+                ? "Neural AI 1:1 comparison"
+                : "Detail Engine 1:1 comparison"
+            }
           >
             <div
               className="w-full max-w-[520px] rounded-2xl border border-line bg-surface p-4 shadow-2xl"
@@ -637,7 +791,9 @@ export function UpscalePanel({
             >
               <header className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                  <p className="mono-label !text-[9px]">DETAIL ENGINE · 1:1</p>
+                  <p className="mono-label !text-[9px]">
+                    {neural ? "NEURAL AI · 1:1" : "DETAIL ENGINE · 1:1"}
+                  </p>
                   <h2 className="display mt-1 text-lg">Drag the seam</h2>
                 </div>
                 <button
@@ -653,6 +809,7 @@ export function UpscalePanel({
                 before={bigLoupe?.before ?? null}
                 after={bigLoupe?.after ?? null}
                 className="w-full"
+                afterLabel={neural ? "AI" : "Engine"}
               />
 
               <div className="mt-2 flex items-center justify-between gap-2">
@@ -660,13 +817,15 @@ export function UpscalePanel({
                   {BIG_CROP}px NATIVE CROP → 2× · BOTH SIDES {BIG_CROP * 2}px
                 </p>
                 {bigBusy ? (
-                  <span className="mono-label !text-[7px] !text-bronze-bright">RENDERING</span>
+                  <span className="mono-label !text-[7px] !text-bronze-bright">
+                    {neural ? "AI RENDERING" : "RENDERING"}
+                  </span>
                 ) : null}
               </div>
 
               <div className="mt-3 border-t border-line pt-3">
                 <Slider
-                  label="Detail"
+                  label={neural ? "AI Detail" : "Detail"}
                   value={detail}
                   min={0}
                   max={100}

@@ -846,12 +846,44 @@ html.lenis body {
   pointer-events: none;
 }
 
+/* A slow, low-amplitude nudge — enough to pull the eye to the upscaler
+   without turning the toolbar into a slot machine. */
+@keyframes upscale-bounce {
+  0%,
+  62%,
+  100% {
+    transform: translateY(0);
+  }
+  68% {
+    transform: translateY(-3px);
+  }
+  74% {
+    transform: translateY(0);
+  }
+  80% {
+    transform: translateY(-1.5px);
+  }
+  86% {
+    transform: translateY(0);
+  }
+}
+
+.upscale-bounce {
+  animation: upscale-bounce 3.6s ease-in-out infinite;
+}
+
+.upscale-bounce:hover,
+.upscale-bounce:focus-visible {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spectrum-text,
   .marquee-lane,
   .float-y,
   .float-y-slow,
-  .spin-slow {
+  .spin-slow,
+  .upscale-bounce {
     animation: none !important;
   }
 }

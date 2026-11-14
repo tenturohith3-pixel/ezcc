@@ -27,6 +27,10 @@ import {
   Blend,
   X,
   Maximize2,
+  ZoomIn,
+  ZoomOut,
+  BrainCircuit,
+  ArrowUpRight,
 } from "lucide-react";
 import {
   createStage,
@@ -46,7 +50,7 @@ import { ThemeToggle } from "@/components/site/ThemeToggle";
 import { canUpscale, recordUpscale } from "@/lib/upscale/quota";
 import type { ExportOutcome, ExportPayload } from "./ExportPanel";
 import { UpscalePanel } from "./UpscalePanel";
-import type { UpscaleLevel } from "@/lib/grade/upscale";
+import type { UpscaleEngine, UpscaleLevel } from "@/lib/grade/upscale";
 import {
   loadSettings,
   saveSettings,
@@ -77,8 +81,16 @@ const MOBILE_TABS = [
   ["hsl", "HSL", Blend],
   ["fx", "FX", Sparkles],
   ["upscale", "Upscale", Maximize2],
-  ["settings", "Setup", Settings2],
 ] as [MobileTab, string, typeof Palette][];
+
+const MOBILE_TITLES: Record<Exclude<MobileTab, "upscale">, string> = {
+  looks: "Looks",
+  primary: "Image",
+  wheels: "Color wheels",
+  hsl: "HSL bands",
+  fx: "Effects & LUTs",
+  settings: "Studio settings",
+};
 
 interface SourceState {
   img: HTMLImageElement | null;
@@ -104,6 +116,8 @@ export function StudioWorkspace() {
   const [level, setLevel] = useState<UpscaleLevel>(0);
   const [detail, setDetail] = useState(65);
   const [denoise, setDenoise] = useState(20);
+  const [engine, setEngine] = useState<UpscaleEngine>("detail");
+  const [upscaleOpen, setUpscaleOpen] = useState(false);
   const [keyOpen, setKeyOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
@@ -112,6 +126,14 @@ export function StudioWorkspace() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [previewQ, setPreviewQ] = useState<PreviewQuality>("balanced");
   const [motion, setMotion] = useState<MotionPref>("smooth");
+
+  /* stage viewport + zoom */
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [vp, setVp] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; zoom: number } | null>(null);
+  const pan = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
 
   // history
   const past = useRef<GradeParams[]>([]);
@@ -338,7 +360,7 @@ export function StudioWorkspace() {
   );
 
   const runExport = useCallback(
-    async (t: ExportPayload): Promise<ExportOutcome> => {
+    async (t: ExportPayload, signal?: AbortSignal): Promise<ExportOutcome> => {
       const src = sourceRef.current;
       if (!src?.img) throw new Error("Open an image before exporting.");
       if (t.upscale && !canUpscale(tier)) {
@@ -356,10 +378,17 @@ export function StudioWorkspace() {
         filenameBase: "effectcraft",
         upscale: t.upscale,
         onProgress: t.onProgress,
+        signal,
       });
       downloadBlob(result.blob, result.filename);
       if (t.upscale && result.upscaled) recordUpscale();
-      return { w: result.w, h: result.h, upscaled: result.upscaled };
+      return {
+        w: result.w,
+        h: result.h,
+        upscaled: result.upscaled,
+        engine: result.engine,
+        fellBack: result.fellBack,
+      };
     },
     [tier],
   );
@@ -430,6 +459,112 @@ export function StudioWorkspace() {
   const previewScale = Math.min(1, previewLongRef.current / previewLong);
   const dispW = source ? Math.round(source.w * previewScale) : 0;
   const dispH = source ? Math.round(source.h * previewScale) : 0;
+
+  /* ── Fit the stage to the available box, in both axes ─────────────
+     A 9:16 frame used to be laid out by width only, so it grew taller
+     than the viewport and the page had to scroll. Measuring the stage
+     lets portrait and landscape sit at the same optical size, and gives
+     the zoom control a real 1:1 reference. */
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setVp({ w: r.width, h: r.height });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [source]);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [source?.name, source?.w, source?.h]);
+
+  const STAGE_PAD = 22;
+  const fitScale =
+    dispW > 0 && dispH > 0 && vp.w > 60 && vp.h > 60
+      ? Math.min((vp.w - STAGE_PAD * 2) / dispW, (vp.h - STAGE_PAD * 2) / dispH, 1)
+      : 0.5;
+  const displayScale = Math.max(0.02, fitScale * zoom);
+  const contentW = Math.max(1, Math.round(dispW * displayScale));
+  const contentH = Math.max(1, Math.round(dispH * displayScale));
+  const zoomPct = Math.max(1, Math.round(fitScale * zoom * 100));
+  const clampZoom = (z: number) => Math.min(8, Math.max(1, z));
+  const setZoomFit = () => setZoom(1);
+  const setZoom100 = () =>
+    setZoom(clampZoom(1 / Math.max(0.05, fitScale)));
+  const nudgeZoom = (dir: 1 | -1) =>
+    setZoom((z) => clampZoom(dir > 0 ? z * 1.25 : z * 0.8));
+
+  /* trackpad / ctrl-wheel zoom */
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      setZoom((z) => clampZoom(e.deltaY < 0 ? z * 1.12 : z * 0.89));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [source]);
+
+  const onStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!source) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      pinch.current = {
+        dist: Math.hypot(a!.x - b!.x, a!.y - b!.y),
+        zoom,
+      };
+      pan.current = null;
+      return;
+    }
+    if (mode === "split" || zoom <= 1.01) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    pan.current = {
+      x: e.clientX,
+      y: e.clientY,
+      sl: el.scrollLeft,
+      st: el.scrollTop,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic pointer */
+    }
+  };
+
+  const onStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2 && pinch.current) {
+      const [a, b] = [...pointers.current.values()];
+      const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+      if (pinch.current.dist > 0) {
+        setZoom(clampZoom((pinch.current.zoom * dist) / pinch.current.dist));
+      }
+      return;
+    }
+    const el = viewportRef.current;
+    if (!el || !pan.current) return;
+    el.scrollLeft = pan.current.sl - (e.clientX - pan.current.x);
+    el.scrollTop = pan.current.st - (e.clientY - pan.current.y);
+  };
+
+  const onStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+    if (pointers.current.size === 0) pan.current = null;
+  };
 
   /* ── Settings (shared by mobile sheet & desktop modal) ── */
   const settingsContent = (
@@ -552,29 +687,13 @@ export function StudioWorkspace() {
             }}
           />
         );
-      case "upscale":
-        return (
-          <UpscalePanel
-            sourceDims={source ? { w: source.w, h: source.h } : null}
-            sourceImage={source?.img ?? null}
-            tier={tier}
-            level={level}
-            detail={detail}
-            denoise={denoise}
-            onLevel={setLevel}
-            onDetail={setDetail}
-            onDenoise={setDenoise}
-            onOpenExport={() => setExportOpen(true)}
-            onQuickExport={runExport}
-          />
-        );
       case "settings":
         return settingsContent;
     }
   })();
 
   return (
-    <div className="pt-14 min-h-screen flex flex-col">
+    <div className="pt-14 h-[100svh] overflow-hidden flex flex-col">
       <input
         ref={fileInputRef}
         type="file"
@@ -588,8 +707,8 @@ export function StudioWorkspace() {
       />
 
       {/* ── Top bar ── */}
-      <div className="h-12 shrink-0 border-b border-line flex items-center justify-between px-4 md:px-6 gap-3 bg-bg/80 backdrop-blur-xl fixed top-0 inset-x-0 z-40">
-        <div className="flex items-center gap-4 min-w-0">
+      <div className="h-12 shrink-0 border-b border-line flex items-center justify-between px-3 md:px-6 gap-2 bg-bg/80 backdrop-blur-xl fixed top-0 inset-x-0 z-40">
+        <div className="flex items-center gap-3 min-w-0">
           <Link href="/" className="text-ink-muted hover:text-ink shrink-0" aria-label="Back to platform">
             <ArrowLeft className="size-4" />
           </Link>
@@ -601,75 +720,131 @@ export function StudioWorkspace() {
           ) : null}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <div className="hidden md:flex rounded-lg border border-line overflow-hidden">
-            {(
-              [
-                ["original", EyeOff, "Original"],
-                ["split", Columns2, "Split"],
-                ["graded", Eye, "Graded"],
-              ] as [Mode, typeof Eye, string][]
-            ).map(([m, Icon, label]) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                title={`${label} (B)`}
-                className={cn(
-                  "px-3 py-2 flex items-center gap-1.5 text-[12px]",
-                  mode === m ? "bg-bronze/15 text-bronze-bright" : "text-ink-muted hover:text-ink",
-                )}
-              >
-                <Icon className="size-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="hidden md:flex rounded-lg border border-line overflow-hidden">
+          {(
+            [
+              ["original", EyeOff, "Original"],
+              ["split", Columns2, "Split"],
+              ["graded", Eye, "Graded"],
+            ] as [Mode, typeof Eye, string][]
+          ).map(([m, Icon, label]) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              title={`${label} (B)`}
+              className={cn(
+                "px-3 py-2 flex items-center gap-1.5 text-[12px]",
+                mode === m ? "bg-bronze/15 text-bronze-bright" : "text-ink-muted hover:text-ink",
+              )}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1 md:gap-1.5">
+          {/* Level-Up is its own destination — always one tap away */}
+          <button
+            onClick={() => (source ? setUpscaleOpen(true) : fileInputRef.current?.click())}
+            className="upscale-bounce group relative flex items-center gap-1.5 rounded-lg border border-bronze/45 bg-gradient-to-br from-bronze/20 to-bronze/[0.04] px-2.5 py-2 text-[12px] text-bronze-bright transition-colors hover:border-bronze/70 md:px-3.5"
+            title="Level-Up Studio (U)"
+            aria-label="Open Level-Up Studio"
+          >
+            <BrainCircuit className="size-4" />
+            <span className="hidden sm:inline">Upscale</span>
+            <span className="rounded bg-bronze/25 px-1 py-px text-[7px] tracking-[0.1em]">AI</span>
+          </button>
+
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-bronze-bright hover:text-ink"
+            className="p-2 text-bronze-bright hover:text-ink sm:hidden"
             title="Open image"
             aria-label="Open image"
           >
             <ImagePlus className="size-4" />
           </button>
-          <button onClick={undo} disabled={histLen.p === 0} className="p-2 text-ink-muted disabled:opacity-30 hover:text-ink" title="Undo (⌘Z)">
+          <button
+            onClick={() =>
+              setMode((m) => (m === "split" ? "graded" : m === "graded" ? "original" : "split"))
+            }
+            className="p-2 text-ink-muted hover:text-ink md:hidden"
+            title="View mode"
+            aria-label="Cycle view mode"
+          >
+            {mode === "split" ? (
+              <Columns2 className="size-4" />
+            ) : mode === "graded" ? (
+              <Eye className="size-4" />
+            ) : (
+              <EyeOff className="size-4" />
+            )}
+          </button>
+
+          <button onClick={undo} disabled={histLen.p === 0} className="hidden md:inline-flex p-2 text-ink-muted disabled:opacity-30 hover:text-ink" title="Undo (⌘Z)">
             <Undo2 className="size-4" />
           </button>
-          <button onClick={redo} disabled={histLen.f === 0} className="p-2 text-ink-muted disabled:opacity-30 hover:text-ink" title="Redo (⌘⇧Z)">
+          <button onClick={redo} disabled={histLen.f === 0} className="hidden md:inline-flex p-2 text-ink-muted disabled:opacity-30 hover:text-ink" title="Redo (⌘⇧Z)">
             <Redo2 className="size-4" />
           </button>
-          <button onClick={resetAll} className="p-2 text-ink-muted hover:text-ink" title="Reset (R)">
+          <button onClick={resetAll} className="hidden md:inline-flex p-2 text-ink-muted hover:text-ink" title="Reset (R)">
             <RotateCcw className="size-4" />
           </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <ThemeToggle compact className="hidden sm:inline-flex" />
+          <span className="hidden sm:inline-flex">
+            <ThemeToggle compact />
+          </span>
+          <span className="hidden md:inline-flex">
+            <button
+              onClick={() => setKeyOpen(true)}
+              className={cn(
+                "pill-badge !py-1.5 !px-3 !text-[9px] hover:border-bronze/40 transition-colors",
+                hydrated && license ? "border-bronze/40 text-bronze-bright" : "",
+              )}
+            >
+              <KeyRound className="size-3" />
+              {hydrated && license ? TIER_LABEL[license.tier] : "Free — add key"}
+            </button>
+          </span>
+          <span className="hidden sm:inline-flex">
+            <button
+              onClick={() => source && setExportOpen(true)}
+              disabled={!source}
+              className="btn-primary !py-2 !px-4 text-[13px] gap-2 disabled:opacity-40"
+            >
+              <Download className="size-4" />
+              Export
+            </button>
+          </span>
           <button
-            onClick={() => setKeyOpen(true)}
-            className={cn(
-              "pill-badge !py-1.5 !px-3 !text-[9px] hover:border-bronze/40 transition-colors",
-              hydrated && license ? "border-bronze/40 text-bronze-bright" : "",
-            )}
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 text-ink-muted hover:text-ink lg:hidden"
+            title="Studio settings"
+            aria-label="Studio settings"
           >
-            <KeyRound className="size-3" />
-            {hydrated && license ? TIER_LABEL[license.tier] : "Free — add key"}
-          </button>
-          <button
-            onClick={() => source && setExportOpen(true)}
-            disabled={!source}
-            className="btn-primary !py-2 !px-4 text-[13px] gap-2 hidden sm:inline-flex disabled:opacity-40"
-          >
-            <Download className="size-4" />
-            Export
+            <Settings2 className="size-4" />
           </button>
         </div>
       </div>
 
       {/* ── Body ── */}
-      <div className="flex-1 lg:grid lg:grid-cols-[260px_1fr_330px] min-h-[calc(100vh-7rem)]">
+      <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[260px_minmax(0,1fr)_330px]">
         {/* Left rail */}
-        <aside className="hidden lg:block border-r border-line overflow-y-auto max-h-[calc(100vh-7rem)]">
+        <aside className="hidden lg:block h-full overflow-y-auto border-r border-line">
+          {/* Spotlight: the upscaler is a headline feature, not a slider */}
+          <button
+            onClick={() => (source ? setUpscaleOpen(true) : fileInputRef.current?.click())}
+            className="upscale-bounce group relative mx-4 mt-4 mb-1 block w-[calc(100%-2rem)] overflow-hidden rounded-xl border border-bronze/30 bg-gradient-to-br from-bronze/15 via-bronze/[0.05] to-transparent p-4 text-left transition-colors hover:border-bronze/55"
+          >
+            <span className="mono-label !text-[8px] !text-bronze-bright">NEW · NEURAL AI</span>
+            <p className="display mt-1 text-base leading-tight">Level-Up Studio</p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+              A learned ESRGAN ×2 pass that reconstructs real texture — up to 2K free, 4K on paid keys.
+            </p>
+            <span className="mt-3 inline-flex items-center gap-1 text-[11px] text-bronze-bright">
+              Open upscaler
+              <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </span>
+          </button>
           <LooksRail
             activeLook={params.look}
             lookIntensity={params.lookIntensity}
@@ -677,24 +852,11 @@ export function StudioWorkspace() {
             onIntensity={intensity}
             tier={tier}
           />
-          <UpscalePanel
-            sourceDims={source ? { w: source.w, h: source.h } : null}
-            sourceImage={source?.img ?? null}
-            tier={tier}
-            level={level}
-            detail={detail}
-            denoise={denoise}
-            onLevel={setLevel}
-            onDetail={setDetail}
-            onDenoise={setDenoise}
-            onOpenExport={() => setExportOpen(true)}
-            onQuickExport={runExport}
-          />
         </aside>
 
         {/* Canvas */}
         <div
-          className="relative flex flex-col"
+          className="relative flex h-full min-h-0 flex-col"
           onDragOver={(e: DragEvent) => {
             e.preventDefault();
             setDragOver(true);
@@ -708,7 +870,7 @@ export function StudioWorkspace() {
           }}
         >
           {status ? (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[92%]">
               <button
                 onClick={() => setStatus(null)}
                 className={cn(
@@ -723,13 +885,21 @@ export function StudioWorkspace() {
             </div>
           ) : null}
 
-          <div className="flex-1 grid place-items-center p-4 md:p-8">
+          <div
+            ref={viewportRef}
+            className="relative min-h-0 flex-1 overflow-auto overscroll-contain"
+            style={{ touchAction: source ? "none" : undefined }}
+            onPointerDown={onStagePointerDown}
+            onPointerMove={onStagePointerMove}
+            onPointerUp={onStagePointerUp}
+            onPointerCancel={onStagePointerUp}
+          >
             {source ? (
-            <div
-              className="relative w-full rounded-2xl border border-line bg-bg-raised overflow-hidden transition-colors shadow-[0_30px_90px_-30px_rgba(0,0,0,0.85)]"
-              style={{ aspectRatio: dispW && dispH ? `${dispW} / ${dispH}` : "16 / 9" }}
-            >
-                <>
+              <div className="flex min-h-full min-w-full p-[22px]">
+                <div
+                  className="relative m-auto shrink-0 overflow-hidden rounded-xl border border-line bg-bg-raised shadow-[0_30px_90px_-30px_rgba(0,0,0,0.85)]"
+                  style={{ width: contentW, height: contentH }}
+                >
                   <canvas
                     ref={baseRef}
                     width={dispW}
@@ -789,65 +959,130 @@ export function StudioWorkspace() {
                     onPointerCancel={() => { dragRef.current = false; }}
                     title={mode === "split" ? "Drag to compare" : undefined}
                   />
-                </>
-            </div>
+                </div>
+              </div>
             ) : (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className={cn(
-                  "group relative w-full max-w-2xl rounded-2xl border border-dashed p-14 md:p-20 text-center transition-colors",
-                  dragOver
-                    ? "border-bronze/70 bg-bronze/[0.06]"
-                    : "border-line/80 bg-bg-raised/30 hover:border-bronze/40",
-                )}
-              >
-                {dragOver ? (
-                  <span className="mono-label !text-[9px] absolute top-4 right-4 text-bronze-bright">
-                    DROP TO OPEN
-                  </span>
-                ) : null}
-                <ImagePlus
+              <div className="grid min-h-full place-items-center p-4 md:p-8">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
                   className={cn(
-                    "size-6 mx-auto transition-colors",
-                    dragOver ? "text-bronze-bright" : "text-ink-faint group-hover:text-bronze-bright",
+                    "group relative w-full max-w-2xl rounded-2xl border border-dashed p-14 md:p-20 text-center transition-colors",
+                    dragOver
+                      ? "border-bronze/70 bg-bronze/[0.06]"
+                      : "border-line/80 bg-bg-raised/30 hover:border-bronze/40",
                   )}
-                  strokeWidth={1.5}
-                />
-                <p className="display text-xl mt-4">Drop a frame here</p>
-                <p className="mono-label mt-2 !text-[9px] !text-ink-faint">PNG · JPEG · WEBP</p>
-                <span className="btn-primary !py-2.5 !px-5 text-[13px] inline-flex mt-6">
-                  Open image
-                </span>
-              </button>
+                >
+                  {dragOver ? (
+                    <span className="mono-label !text-[9px] absolute top-4 right-4 text-bronze-bright">
+                      DROP TO OPEN
+                    </span>
+                  ) : null}
+                  <ImagePlus
+                    className={cn(
+                      "size-6 mx-auto transition-colors",
+                      dragOver ? "text-bronze-bright" : "text-ink-faint group-hover:text-bronze-bright",
+                    )}
+                    strokeWidth={1.5}
+                  />
+                  <p className="display text-xl mt-4">Drop a frame here</p>
+                  <p className="mono-label mt-2 !text-[9px] !text-ink-faint">PNG · JPEG · WEBP</p>
+                  <span className="btn-primary !py-2.5 !px-5 text-[13px] inline-flex mt-6">
+                    Open image
+                  </span>
+                </button>
+              </div>
             )}
           </div>
 
-          {/* status bar — only once a source is loaded */}
+          {/* mobile zoom pill */}
           {source ? (
-          <div className="shrink-0 border-t border-line px-4 md:px-6 h-9 flex items-center justify-between">
-            <span className="mono-label !text-[9px]">
-              {LOOKS.find((l) => l.id === params.look)?.name ?? "No look"}
-            </span>
-            <div className="flex items-center gap-3">
-              <span className="mono-label !text-[9px] hidden sm:block">
-                B SPLIT · E EXPORT · U LEVEL-UP · ⌘Z UNDO
-              </span>
-              <span className="mono-label !text-[9px] text-bronze-bright">
-                MAX {(TIER_MAX_EXPORT[tier] ?? 1920) >= 7680 ? "SOURCE" : `${TIER_MAX_EXPORT[tier] ?? 1920}PX`}
-              </span>
-              <button onClick={() => setExportOpen(true)} disabled={!source} className="sm:hidden p-1 text-bronze-bright disabled:opacity-40">
-                <Download className="size-4" />
+            <div className="absolute bottom-[4.6rem] right-3 z-20 flex items-center gap-0.5 rounded-full border border-line bg-bg/90 px-1 py-1 shadow-lg backdrop-blur-xl lg:hidden">
+              <button
+                onClick={() => nudgeZoom(-1)}
+                className="p-1.5 text-ink-muted hover:text-ink"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="size-3.5" />
+              </button>
+              <button
+                onClick={setZoomFit}
+                className="mono-num min-w-[3.1rem] px-1 text-center text-[10px] text-ink-muted hover:text-bronze-bright"
+                title="Tap to fit"
+              >
+                {zoomPct}%
+              </button>
+              <button
+                onClick={() => nudgeZoom(1)}
+                className="p-1.5 text-ink-muted hover:text-ink"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="size-3.5" />
               </button>
             </div>
-          </div>
+          ) : null}
+
+          {/* desktop status bar with zoom */}
+          {source ? (
+            <div className="hidden h-10 shrink-0 items-center justify-between border-t border-line px-4 lg:flex">
+              <div className="flex items-center gap-3">
+                <span className="mono-label !text-[9px]">
+                  {LOOKS.find((l) => l.id === params.look)?.name ?? "No look"}
+                </span>
+                <span className="mono-label !text-[9px] hidden xl:block">
+                  B SPLIT · E EXPORT · U LEVEL-UP · ⌘Z UNDO
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center overflow-hidden rounded-lg border border-line">
+                  <button
+                    onClick={setZoomFit}
+                    className={cn(
+                      "px-2.5 py-1 text-[10px] transition-colors",
+                      zoom <= 1.01
+                        ? "bg-bronze/15 text-bronze-bright"
+                        : "text-ink-muted hover:text-ink",
+                    )}
+                  >
+                    Fit
+                  </button>
+                  <button onClick={() => nudgeZoom(-1)} className="px-2 py-1 text-ink-muted hover:text-ink" aria-label="Zoom out">
+                    <ZoomOut className="size-3.5" />
+                  </button>
+                  <button
+                    onClick={setZoomFit}
+                    className="mono-num min-w-[3.4rem] px-1 text-center text-[10px] text-ink-muted hover:text-bronze-bright"
+                    title="Reset zoom"
+                  >
+                    {zoomPct}%
+                  </button>
+                  <button onClick={() => nudgeZoom(1)} className="px-2 py-1 text-ink-muted hover:text-ink" aria-label="Zoom in">
+                    <ZoomIn className="size-3.5" />
+                  </button>
+                  <button
+                    onClick={setZoom100}
+                    className={cn(
+                      "px-2.5 py-1 text-[10px] transition-colors",
+                      zoom > 1.01
+                        ? "bg-bronze/15 text-bronze-bright"
+                        : "text-ink-muted hover:text-ink",
+                    )}
+                  >
+                    100%
+                  </button>
+                </div>
+                <span className="mono-label !text-[9px] text-bronze-bright">
+                  MAX {(TIER_MAX_EXPORT[tier] ?? 1920) >= 7680 ? "SOURCE" : `${TIER_MAX_EXPORT[tier] ?? 1920}PX`}
+                </span>
+              </div>
+            </div>
           ) : null}
 
           {/* clearance — the mobile editor dock lives here */}
-          <div className="h-16 lg:hidden shrink-0" aria-hidden />
+          <div className="h-[4.25rem] shrink-0 lg:hidden" aria-hidden />
         </div>
 
         {/* Right rail (desktop) */}
-        <aside className="hidden lg:block border-l border-line overflow-y-auto max-h-[calc(100vh-7rem)]">
+        <aside className="hidden lg:block h-full overflow-y-auto border-l border-line">
           <PrimaryPanel params={params} patch={patch} />
           <WheelsPanel params={params} patch={patch} hasKey={rank >= 2} />
           <HslPanel params={params} patch={patch} hasKey={rank >= 2} />
@@ -876,83 +1111,150 @@ export function StudioWorkspace() {
         </aside>
 
         {/* ── Mobile editor dock + sheet ── */}
-        <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-line bg-bg/95 backdrop-blur-xl">
-          {/* panel sheet */}
+        <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-line bg-bg/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]">
           {sheetOpen ? (
-            <div className="absolute bottom-full inset-x-0 border-t border-line bg-bg-raised shadow-[0_-40px_90px_-20px_rgba(0,0,0,0.85)]">
-              <div className="flex items-center justify-between px-3 py-2.5 border-b border-line">
-                <div className="flex rounded-lg border border-line overflow-hidden">
-                  {(
-                    [
-                      ["original", EyeOff],
-                      ["split", Columns2],
-                      ["graded", Eye],
-                    ] as [Mode, typeof Eye][]
-                  ).map(([m, Icon]) => (
-                    <button
-                      key={m}
-                      onClick={() => setMode(m)}
-                      title={m}
-                      className={cn(
-                        "px-3 py-1.5",
-                        mode === m ? "bg-bronze/15 text-bronze-bright" : "text-ink-muted",
-                      )}
-                    >
-                      <Icon className="size-3.5" />
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
+            <div className="absolute bottom-full inset-x-0 overflow-hidden rounded-t-2xl border-t border-line bg-bg-raised shadow-[0_-40px_90px_-20px_rgba(0,0,0,0.85)]">
+              <div className="flex justify-center pt-2 pb-1">
+                <span className="h-1 w-9 rounded-full bg-line" />
+              </div>
+              <div className="flex items-center justify-between gap-2 px-3 pb-2.5 border-b border-line">
+                <span className="mono-label !text-[9px] hidden sm:block">
+                  {tab === "upscale" ? "Upscale" : MOBILE_TITLES[tab]}
+                </span>
+                <div className="flex items-center gap-0.5 ml-auto">
+                  <div className="mr-1 flex overflow-hidden rounded-lg border border-line">
+                    {(
+                      [
+                        ["original", EyeOff],
+                        ["split", Columns2],
+                        ["graded", Eye],
+                      ] as [Mode, typeof Eye][]
+                    ).map(([m, Icon]) => (
+                      <button
+                        key={m}
+                        onClick={() => setMode(m)}
+                        title={m}
+                        className={cn(
+                          "px-2.5 py-1.5",
+                          mode === m ? "bg-bronze/15 text-bronze-bright" : "text-ink-muted",
+                        )}
+                      >
+                        <Icon className="size-3.5" />
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={undo} disabled={histLen.p === 0} className="p-1.5 text-ink-muted disabled:opacity-30" aria-label="Undo">
+                    <Undo2 className="size-4" />
+                  </button>
+                  <button onClick={redo} disabled={histLen.f === 0} className="p-1.5 text-ink-muted disabled:opacity-30" aria-label="Redo">
+                    <Redo2 className="size-4" />
+                  </button>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="btn-ghost !py-1.5 !px-3 text-[12px] gap-1.5"
+                    className="p-1.5 text-bronze-bright"
+                    aria-label="Open image"
                   >
-                    <ImagePlus className="size-3.5" />
-                    Open
+                    <ImagePlus className="size-4" />
                   </button>
                   <button
                     onClick={() => source && setExportOpen(true)}
                     disabled={!source}
-                    className="btn-primary !py-1.5 !px-3 text-[12px] gap-1.5 disabled:opacity-40"
+                    className="p-1.5 text-bronze-bright disabled:opacity-40"
+                    aria-label="Export"
                   >
-                    <Download className="size-3.5" />
-                    Export
+                    <Download className="size-4" />
                   </button>
                   <button onClick={() => setSheetOpen(false)} className="p-1.5 text-ink-muted hover:text-ink" aria-label="Close panel">
                     <X className="size-4" />
                   </button>
                 </div>
               </div>
-              <div className="overflow-y-auto max-h-[48svh] px-1 pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
+              <div className="overflow-y-auto max-h-[52svh] px-1 pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
                 {mobilePanel}
               </div>
             </div>
           ) : null}
 
           {/* the dock itself */}
-          <div className="grid grid-cols-7">
-            {MOBILE_TABS.map(([id, label, Icon]) => (
-              <button
-                key={id}
-                onClick={() => {
-                  if (tab === id && sheetOpen) setSheetOpen(false);
-                  else {
-                    setTab(id);
-                    setSheetOpen(true);
-                  }
-                }}
-                className={cn(
-                  "py-2.5 flex flex-col items-center gap-1 text-[9.5px] tracking-[0.12em] uppercase",
-                  tab === id && sheetOpen ? "text-bronze-bright" : "text-ink-faint hover:text-ink-muted",
-                )}
-              >
-                <Icon className="size-4" strokeWidth={1.75} />
-                {label}
-              </button>
-            ))}
+          <div className="grid grid-cols-6">
+            {MOBILE_TABS.map(([id, label, Icon]) => {
+              const active = id === "upscale" ? upscaleOpen : tab === id && sheetOpen;
+              return (
+                <button
+                  key={id}
+                  onClick={() => {
+                    if (id === "upscale") {
+                      setSheetOpen(false);
+                      if (source) setUpscaleOpen(true);
+                      else fileInputRef.current?.click();
+                      return;
+                    }
+                    if (tab === id && sheetOpen) setSheetOpen(false);
+                    else {
+                      setTab(id);
+                      setSheetOpen(true);
+                    }
+                  }}
+                  className={cn(
+                    "relative py-2.5 flex flex-col items-center gap-1 text-[9.5px] tracking-[0.12em] uppercase",
+                    active ? "text-bronze-bright" : "text-ink-faint hover:text-ink-muted",
+                  )}
+                >
+                  <Icon className={cn("size-4", id === "upscale" && "upscale-bounce")} strokeWidth={1.75} />
+                  {label}
+                  {id === "upscale" ? (
+                    <span className="absolute right-[calc(50%-1.35rem)] top-1.5 size-1.5 rounded-full bg-bronze-bright shadow-[0_0_8px_rgba(232,207,162,0.9)]" />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
+
+      {/* ── Dedicated Level-Up Studio ── */}
+      {upscaleOpen ? (
+        <div className="fixed inset-0 z-[75] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="Level-Up Studio">
+          <div className="absolute inset-0 scrim backdrop-blur-sm" onClick={() => setUpscaleOpen(false)} />
+          <div className="relative flex max-h-[92svh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-bg-raised shadow-2xl sm:max-w-md sm:rounded-2xl">
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3">
+              <div>
+                <p className="mono-label !text-[8px] !text-bronze-bright">
+                  UPSCALE · SEPARATE FROM GRADING
+                </p>
+                <h2 className="display text-lg leading-tight">Level-Up Studio</h2>
+              </div>
+              <button
+                onClick={() => setUpscaleOpen(false)}
+                className="p-1.5 text-ink-muted hover:text-ink"
+                aria-label="Close Level-Up Studio"
+              >
+                <X className="size-4" />
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto pb-1">
+              <UpscalePanel
+                sourceDims={source ? { w: source.w, h: source.h } : null}
+                sourceImage={source?.img ?? null}
+                tier={tier}
+                level={level}
+                detail={detail}
+                denoise={denoise}
+                engine={engine}
+                onLevel={setLevel}
+                onDetail={setDetail}
+                onDenoise={setDenoise}
+                onEngine={setEngine}
+                onOpenExport={() => {
+                  setUpscaleOpen(false);
+                  setExportOpen(true);
+                }}
+                onQuickExport={runExport}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* ── Desktop settings modal ── */}
       {settingsOpen ? (
@@ -983,9 +1285,11 @@ export function StudioWorkspace() {
           level={level}
           detail={detail}
           denoise={denoise}
+          engine={engine}
           onLevel={setLevel}
           onDetail={setDetail}
           onDenoise={setDenoise}
+          onEngine={setEngine}
         />
       ) : null}
       {keyOpen ? <KeyEntryModal onClose={() => setKeyOpen(false)} /> : null}

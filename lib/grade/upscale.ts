@@ -19,12 +19,20 @@ const BAND_ROWS = 96;
 /** 0 = off, 2/4 = level-up factor. Shared by the Studio panel + export dialog. */
 export type UpscaleLevel = 0 | 2 | 4;
 
+/**
+ * `detail` = the Rust resample + micro-contrast engine.
+ * `neural` = the learned ESRGAN x2 model (slower, invents real texture).
+ */
+export type UpscaleEngine = "detail" | "neural";
+
 export interface UpscaleOptions {
   factor: 2 | 4;
   detail: number; // 0..100 micro-contrast
   denoise: number; // 0..100 pre-blur
   maxLongEdge: number; // tier export ceiling
   maxPixels?: number;
+  engine?: UpscaleEngine;
+  signal?: AbortSignal;
   onProgress?: (pct: number) => void;
 }
 
@@ -43,6 +51,11 @@ export interface UpscaleResult {
   scale: number;
   usedKernel: boolean;
   limited: boolean;
+  /** Which engine actually produced the pixels. */
+  engine: UpscaleEngine;
+  /** Neural was requested but failed (GPU/OOM); classical ran instead. */
+  fellBack?: boolean;
+  fallbackReason?: string;
 }
 
 export function defaultMaxPixels(): number {
@@ -86,6 +99,33 @@ export async function upscaleCanvas(
   source: HTMLCanvasElement,
   opts: UpscaleOptions,
 ): Promise<UpscaleResult> {
+  let fallbackReason: string | undefined;
+
+  if (opts.engine === "neural") {
+    try {
+      /* The neural stack is a separate ~1 MB chunk — load it only when
+         someone actually asks for it. */
+      const { neuralUpscaleCanvas } = await import("./neural");
+      return await neuralUpscaleCanvas(source, opts);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      fallbackReason = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const result = await detailUpscaleCanvas(source, opts);
+  return {
+    ...result,
+    engine: "detail",
+    fellBack: fallbackReason !== undefined,
+    fallbackReason,
+  };
+}
+
+async function detailUpscaleCanvas(
+  source: HTMLCanvasElement,
+  opts: UpscaleOptions,
+): Promise<UpscaleResult> {
   const srcW = source.width;
   const srcH = source.height;
   const maxPixels = opts.maxPixels ?? defaultMaxPixels();
@@ -98,6 +138,7 @@ export async function upscaleCanvas(
       scale: 1,
       usedKernel: false,
       limited: plan.limited,
+      engine: "detail",
     };
   }
   const { w: dstW, h: dstH } = plan;
@@ -159,6 +200,7 @@ export async function upscaleCanvas(
               scale: plan.scale,
               usedKernel: true,
               limited: plan.limited,
+              engine: "detail",
             };
           }
         }
@@ -195,5 +237,6 @@ export async function upscaleCanvas(
     scale: plan.scale,
     usedKernel: false,
     limited: plan.limited,
+    engine: "detail",
   };
 }

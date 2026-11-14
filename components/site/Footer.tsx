@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { FooterWordmark } from "@/components/site/FooterWordmark";
 import { PrismMark } from "@/components/site/PrismMark";
@@ -31,6 +34,11 @@ const COLS: { title: string; links: { href: string; label: string }[] }[] = [
 ];
 
 export function Footer() {
+  const pathname = usePathname();
+  /* The Studio is a fixed, full-height app — a marketing footer under it
+     only creates phantom scroll. */
+  if (pathname.startsWith("/studio") || pathname.startsWith("/admin")) return null;
+
   return (
     <footer className="relative mt-24 overflow-hidden border-t border-line bg-bg-raised/20">
       <div className="grid-dots pointer-events-none absolute inset-0 opacity-40" />

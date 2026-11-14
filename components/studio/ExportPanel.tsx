@@ -9,7 +9,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import { TIER_LABEL, TIER_MAX_EXPORT, TIER_MAX_UPSCALE, type Tier } from "@/lib/license";
-import { planUpscale, type UpscaleLevel } from "@/lib/grade/upscale";
+import {
+  planUpscale,
+  type UpscaleEngine,
+  type UpscaleLevel,
+} from "@/lib/grade/upscale";
 import {
   FREE_UPSCALES_PER_24H,
   UPSCALE_EVENT,
@@ -33,6 +37,7 @@ export interface ExportPayload {
     detail: number;
     denoise: number;
     maxLongEdge: number;
+    engine?: UpscaleEngine;
   } | null;
   onProgress: (pct: number) => void;
 }
@@ -41,6 +46,8 @@ export interface ExportOutcome {
   w: number;
   h: number;
   upscaled: boolean;
+  engine?: UpscaleEngine;
+  fellBack?: boolean;
 }
 
 type Level = UpscaleLevel;
@@ -59,9 +66,11 @@ export function ExportPanel({
   level,
   detail,
   denoise,
+  engine,
   onLevel,
   onDetail,
   onDenoise,
+  onEngine,
 }: {
   sourceDims: { w: number; h: number } | null;
   tier: Tier;
@@ -70,9 +79,11 @@ export function ExportPanel({
   level: Level;
   detail: number;
   denoise: number;
+  engine: UpscaleEngine;
   onLevel: (v: Level) => void;
   onDetail: (v: number) => void;
   onDenoise: (v: number) => void;
+  onEngine: (v: UpscaleEngine) => void;
 }) {
   const [format, setFormat] = useState<"png" | "jpeg">("jpeg");
   const [quality, setQuality] = useState(92);
@@ -83,6 +94,7 @@ export function ExportPanel({
   >(null);
 
   const paid = tier !== "basic";
+  const neural = engine === "neural";
   const [remaining, setRemaining] = useState(FREE_UPSCALES_PER_24H);
   const [nextIn, setNextIn] = useState(0);
 
@@ -255,7 +267,9 @@ export function ExportPanel({
                 <div>
                   <p className="text-[12px] leading-none">Level-Up</p>
                   <p className="mono-label !text-[7px] mt-1 !text-ink-faint">
-                    DETAIL ENGINE — LANCZOS3 IN LINEAR LIGHT
+                    {neural
+                      ? "NEURAL AI — ESRGAN ×2 + EDGE POLISH"
+                      : "DETAIL ENGINE — LANCZOS3 IN LINEAR LIGHT"}
                   </p>
                 </div>
               </div>
@@ -274,6 +288,29 @@ export function ExportPanel({
                     ? `NEXT IN ${formatQuotaWindow(nextIn)}`
                     : `${remaining} OF ${FREE_UPSCALES_PER_24H} · 24H`}
               </span>
+            </div>
+
+            <div className="mb-2.5 grid grid-cols-2 gap-1 rounded-lg border border-line/70 bg-bg/30 p-0.5">
+              <button
+                onClick={() => onEngine("detail")}
+                className={
+                  !neural
+                    ? "rounded-md bg-bronze/15 px-2 py-1.5 text-[10px] text-bronze-bright"
+                    : "rounded-md px-2 py-1.5 text-[10px] text-ink-muted hover:text-ink"
+                }
+              >
+                Detail Engine
+              </button>
+              <button
+                onClick={() => onEngine("neural")}
+                className={
+                  neural
+                    ? "rounded-md bg-bronze/15 px-2 py-1.5 text-[10px] text-bronze-bright"
+                    : "rounded-md px-2 py-1.5 text-[10px] text-ink-muted hover:text-ink"
+                }
+              >
+                Neural AI
+              </button>
             </div>
 
             <div className="grid grid-cols-3 gap-1.5">
@@ -337,17 +374,19 @@ export function ExportPanel({
             {level > 0 ? (
               <div className="mt-3 space-y-2.5 border-t border-bronze/15 pt-3">
                 <MiniSlider
-                  label="Detail"
-                  hint="edge micro-contrast"
+                  label={neural ? "AI Detail" : "Detail"}
+                  hint={neural ? "edge polish on model output" : "edge micro-contrast"}
                   value={detail}
                   onChange={onDetail}
                 />
-                <MiniSlider
-                  label="Smooth"
-                  hint="denoise before resample"
-                  value={denoise}
-                  onChange={onDenoise}
-                />
+                {neural ? null : (
+                  <MiniSlider
+                    label="Smooth"
+                    hint="denoise before resample"
+                    value={denoise}
+                    onChange={onDenoise}
+                  />
+                )}
               </div>
             ) : null}
           </div>
@@ -380,7 +419,11 @@ export function ExportPanel({
         <footer className="shrink-0 border-t border-line px-6 py-4">
           <p className="mono-num mb-2 text-[10px] text-ink-faint">
             OUTPUT — {planned.w > 0 ? `${planned.w} × ${planned.h}` : "—"}
-            {level > 0 ? " · DETAIL ENGINE" : ""}
+            {level > 0
+              ? neural
+                ? " · NEURAL AI"
+                : " · DETAIL ENGINE"
+              : ""}
           </p>
 
           {status ? (
@@ -431,6 +474,7 @@ export function ExportPanel({
                           detail,
                           denoise,
                           maxLongEdge: upMaxLong,
+                          engine,
                         }
                       : null,
                   onProgress: setProgress,
@@ -438,7 +482,13 @@ export function ExportPanel({
                 setStatus({
                   kind: "ok",
                   msg: `Exported ${out.w} × ${out.h}${
-                    out.upscaled ? " — leveled up" : ""
+                    out.upscaled
+                      ? out.fellBack
+                        ? " — AI unavailable, Detail Engine used"
+                        : out.engine === "neural"
+                          ? " — neural level-up"
+                          : " — leveled up"
+                      : ""
                   } — check your downloads.`,
                 });
               } catch (err) {
@@ -457,8 +507,10 @@ export function ExportPanel({
               <>
                 <LoaderCircle className="size-4 animate-spin" />{" "}
                 {progress !== null && progress > 0
-                  ? `Leveling up ${Math.round(progress * 100)}%…`
-                  : "Compositing…"}
+                  ? `${neural ? "AI leveling up" : "Leveling up"} ${Math.round(progress * 100)}%…`
+                  : neural
+                    ? "Warming neural engine…"
+                    : "Compositing…"}
               </>
             ) : (
               <>

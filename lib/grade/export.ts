@@ -7,7 +7,7 @@
 
 import { createStage, paintSource, renderGrade } from "./stage";
 import type { GradeParams } from "./params";
-import { upscaleCanvas } from "./upscale";
+import { upscaleCanvas, type UpscaleEngine } from "./upscale";
 
 export interface ExportUpscale {
   factor: 2 | 4;
@@ -15,6 +15,8 @@ export interface ExportUpscale {
   denoise: number; // 0..100 pre-blur
   /** Plan ceiling for the enlarged frame (independent of base render size). */
   maxLongEdge: number;
+  /** Detail Engine (classical) or the learned ESRGAN model. */
+  engine?: UpscaleEngine;
 }
 
 export interface ExportRequest {
@@ -29,6 +31,8 @@ export interface ExportRequest {
   upscale?: ExportUpscale | null;
   /** Upscale progress, 0..1. */
   onProgress?: (pct: number) => void;
+  /** Abort a long neural level-up. */
+  signal?: AbortSignal;
 }
 
 export interface ExportResult {
@@ -38,6 +42,10 @@ export interface ExportResult {
   h: number;
   /** True when the Detail Engine actually resampled the frame. */
   upscaled: boolean;
+  /** Which engine produced the enlarged frame. */
+  engine?: UpscaleEngine;
+  /** Neural was requested but fell back to the classical engine. */
+  fellBack?: boolean;
 }
 
 const wait = (ms = 40) => new Promise<void>((r) => setTimeout(r, ms));
@@ -71,18 +79,24 @@ export async function renderExportBlob(
   let outW = tw;
   let outH = th;
   let upscaled = false;
+  let engine: UpscaleEngine | undefined;
+  let fellBack = false;
   if (req.upscale) {
     const up = await upscaleCanvas(stage.graded, {
       factor: req.upscale.factor,
       detail: req.upscale.detail,
       denoise: req.upscale.denoise,
       maxLongEdge: req.upscale.maxLongEdge,
+      engine: req.upscale.engine,
+      signal: req.signal,
       onProgress: req.onProgress,
     });
     output = up.canvas;
     outW = up.w;
     outH = up.h;
     upscaled = up.scale > 1.01;
+    engine = up.engine;
+    fellBack = up.fellBack ?? false;
   }
 
   const blob = await new Promise<Blob | null>((resolve) =>
@@ -102,6 +116,8 @@ export async function renderExportBlob(
     w: outW,
     h: outH,
     upscaled,
+    engine,
+    fellBack,
   };
 }
 
