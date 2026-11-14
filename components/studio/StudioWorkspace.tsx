@@ -833,7 +833,7 @@ export function StudioWorkspace() {
           {/* Spotlight: the upscaler is a headline feature, not a slider */}
           <button
             onClick={() => (source ? setUpscaleOpen(true) : fileInputRef.current?.click())}
-            className="upscale-bounce group relative mx-4 mt-4 mb-1 block w-[calc(100%-2rem)] overflow-hidden rounded-xl border border-bronze/30 bg-gradient-to-br from-bronze/15 via-bronze/[0.05] to-transparent p-4 text-left transition-colors hover:border-bronze/55"
+            className="group relative mx-4 mt-4 mb-1 block w-[calc(100%-2rem)] overflow-hidden rounded-xl border border-bronze/30 bg-gradient-to-br from-bronze/15 via-bronze/[0.05] to-transparent p-4 text-left transition-colors hover:border-bronze/55"
           >
             <span className="mono-label !text-[8px] !text-bronze-bright">NEW · NEURAL AI</span>
             <p className="display mt-1 text-base leading-tight">Level-Up Studio</p>

@@ -569,7 +569,7 @@ export function UpscalePanel({
           }}
           disabled={busy}
           className={cn(
-            "upscale-bounce flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] transition-colors disabled:opacity-50",
+            "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] transition-colors disabled:opacity-50",
             neural
               ? "bg-bronze/15 text-bronze-bright shadow-[inset_0_0_0_1px_rgba(232,207,162,0.25)]"
               : "text-ink-muted hover:text-ink",
